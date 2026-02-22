@@ -2,6 +2,7 @@ from flask import Blueprint, jsonify, request
 
 from ..auth import admin_required
 from ..db import get_db_connection
+from ..parser import extract_recipe_fields
 
 bp = Blueprint("admin_api", __name__, url_prefix="/api")
 
@@ -13,10 +14,16 @@ def create_recipe():
     title = (data.get("title") or "").strip()
     source = (data.get("source") or "").strip()
 
-    if not title or not source:
-        return jsonify({"error": "Title and source are required"}), 400
+    if not source:
+        return jsonify({"error": "Source is required"}), 400
 
-    description = (data.get("description") or "").strip()
+    parsed_fields = extract_recipe_fields(source)
+    if not title:
+        title = (parsed_fields.get("title") or "").strip()
+    if not title:
+        return jsonify({"error": "Title is required (or provide metadata title in source)"}), 400
+
+    description = (data.get("description") or "").strip() or (parsed_fields.get("description") or "")
     category = (data.get("category") or "Uncategorized").strip()
 
     conn = get_db_connection()
@@ -38,10 +45,16 @@ def update_recipe(recipe_id: int):
     title = (data.get("title") or "").strip()
     source = (data.get("source") or "").strip()
 
-    if not title or not source:
-        return jsonify({"error": "Title and source are required"}), 400
+    if not source:
+        return jsonify({"error": "Source is required"}), 400
 
-    description = (data.get("description") or "").strip()
+    parsed_fields = extract_recipe_fields(source)
+    if not title:
+        title = (parsed_fields.get("title") or "").strip()
+    if not title:
+        return jsonify({"error": "Title is required (or provide metadata title in source)"}), 400
+
+    description = (data.get("description") or "").strip() or (parsed_fields.get("description") or "")
     category = (data.get("category") or "Uncategorized").strip()
 
     conn = get_db_connection()

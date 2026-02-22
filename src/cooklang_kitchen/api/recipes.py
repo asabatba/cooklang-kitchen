@@ -1,7 +1,7 @@
 from flask import Blueprint, jsonify, request
 
 from ..db import get_db_connection
-from ..parser import combine_ingredients, parse
+from ..parser import combine_ingredients, extract_recipe_fields, parse
 
 bp = Blueprint("recipes_api", __name__, url_prefix="/api")
 
@@ -10,10 +10,20 @@ bp = Blueprint("recipes_api", __name__, url_prefix="/api")
 def list_recipes():
     conn = get_db_connection()
     rows = conn.execute(
-        "SELECT id, title, description, category FROM recipes ORDER BY category, title"
+        "SELECT id, title, description, category, source FROM recipes ORDER BY category, title"
     ).fetchall()
     conn.close()
-    return jsonify([dict(r) for r in rows])
+    payload = []
+    for row in rows:
+        item = dict(row)
+        parsed_fields = extract_recipe_fields(item["source"])
+        if not (item.get("title") or "").strip():
+            item["title"] = parsed_fields.get("title") or "Untitled recipe"
+        if not (item.get("description") or "").strip():
+            item["description"] = parsed_fields.get("description") or ""
+        item.pop("source", None)
+        payload.append(item)
+    return jsonify(payload)
 
 
 @bp.get("/recipes/<int:recipe_id>")
@@ -29,6 +39,11 @@ def get_recipe(recipe_id: int):
         return jsonify({"error": "Recipe not found"}), 404
 
     recipe_data = dict(row)
+    parsed_fields = extract_recipe_fields(recipe_data["source"])
+    if not (recipe_data.get("title") or "").strip():
+        recipe_data["title"] = parsed_fields.get("title") or "Untitled recipe"
+    if not (recipe_data.get("description") or "").strip():
+        recipe_data["description"] = parsed_fields.get("description") or ""
     recipe_data["parsed"] = parse(recipe_data["source"]).to_dict()
     return jsonify(recipe_data)
 

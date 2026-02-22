@@ -506,7 +506,7 @@
       <input type="hidden" id="editId">
       <div class="form-row">
         <div class="form-group">
-          <label>Title</label>
+          <label>Title (optional if in metadata)</label>
           <input type="text" class="form-input" id="fieldTitle" placeholder="My Recipe">
         </div>
         <div class="form-group">
@@ -565,6 +565,7 @@
   let activeData = null; // full recipe data for the currently viewed recipe
   let searchFilter = '';
   let adminMode = false;
+  const ADMIN_MODE_PREF_KEY = 'cooklang_admin_mode_preference';
   let lastShoppingData = null;
 
   // ---- API ----
@@ -665,7 +666,7 @@
     lines.push('');
 
     if (Object.keys(p.metadata).length) {
-      for (const [k,v] of Object.entries(p.metadata)) lines.push(`${k}: ${v}`);
+      for (const [k,v] of Object.entries(p.metadata)) lines.push(`${k}: ${formatMetaValue(v)}`);
       lines.push('');
     }
 
@@ -695,7 +696,7 @@
     lines.push('');
 
     if (Object.keys(p.metadata).length) {
-      for (const [k,v] of Object.entries(p.metadata)) lines.push(`**${k}:** ${v}  `);
+      for (const [k,v] of Object.entries(p.metadata)) lines.push(`**${k}:** ${formatMetaValue(v)}  `);
       lines.push('');
     }
 
@@ -838,9 +839,16 @@
     if (Object.keys(meta).length) {
       html += '<div class="recipe-meta-bar">';
       for (const [k,v] of Object.entries(meta)) {
-        html += `<span class="meta-chip"><strong>${esc(k)}:</strong> ${esc(v)}</span>`;
+        html += `<span class="meta-chip"><strong>${esc(k)}:</strong> ${esc(formatMetaValue(v))}</span>`;
       }
       html += '</div>';
+    }
+
+    if (p.notes && p.notes.length) {
+      html += '<div class="section-title">Notes</div>';
+      for (const note of p.notes) {
+        html += `<div class="step" style="margin-bottom:0.25rem;"><span class="step-num">›</span><div class="step-text"><em>${esc(note.text)}</em></div></div>`;
+      }
     }
 
     // Ingredients overview
@@ -916,8 +924,12 @@
 
   function highlightSource(source) {
     let text = esc(source);
-    // Metadata and sections are line-level, safe to do separately
+    // Metadata, notes, and sections are line-level, safe to do separately
+    text = text.replace(/^(---\s*)$/gm, '<span class="ck-meta">$1</span>');
+    text = text.replace(/^([A-Za-z0-9_-]+\s*:\s*.+)$/gm, '<span class="ck-meta">$1</span>');
+    text = text.replace(/^(\s*-\s+.+)$/gm, '<span class="ck-meta">$1</span>');
     text = text.replace(/^(&gt;&gt;\s*.+)$/gm, '<span class="ck-meta">$1</span>');
+    text = text.replace(/^(&gt;\s*.+)$/gm, '<span class="ck-meta">$1</span>');
     text = text.replace(/^(=+\s*.*?=*\s*)$/gm, '<span class="ck-section">$1</span>');
     // Single-pass for @, #, ~ tokens
     const SRC_RE = /(@[^\s@#~{}]+(?:\s+[^\s@#~{}]+)*?\{[^}]*\}(?:\([^)]*\))?)|(&#64;[a-zA-Z\u00C0-\u024F][a-zA-Z0-9\u00C0-\u024F _-]*)|(@[a-zA-Z\u00C0-\u024F][a-zA-Z0-9\u00C0-\u024F _-]*)|(#[^\s@#~{}]+(?:\s+[^\s@#~{}]+)*?\{[^}]*\})|(#[a-zA-Z\u00C0-\u024F][a-zA-Z0-9\u00C0-\u024F _-]*)|(~[^\s@#~{}]*\{[^}]*\})/g;
@@ -974,6 +986,23 @@
     updateAdminButton();
   }
 
+  function getAdminModePreference() {
+    try {
+      return localStorage.getItem(ADMIN_MODE_PREF_KEY) === '1';
+    } catch {
+      return false;
+    }
+  }
+
+  function setAdminModePreference(enabled) {
+    try {
+      if (enabled) localStorage.setItem(ADMIN_MODE_PREF_KEY, '1');
+      else localStorage.removeItem(ADMIN_MODE_PREF_KEY);
+    } catch {
+      // Ignore storage failures.
+    }
+  }
+
   function updateAdminButton() {
     const btn = document.getElementById('adminToggle');
     if (adminMode) {
@@ -989,6 +1018,7 @@
     if (adminMode) {
       // Turn off
       adminMode = false;
+      setAdminModePreference(false);
       updateAdminButton();
       renderRecipeList();
       if (activeId) viewRecipe(activeId);
@@ -1016,6 +1046,7 @@
 
   function activateAdmin() {
     adminMode = true;
+    setAdminModePreference(true);
     updateAdminButton();
     renderRecipeList();
     if (activeId) viewRecipe(activeId);
@@ -1052,6 +1083,7 @@
     await fetch('/api/auth/logout', { method: 'POST' });
     authStatus.logged_in = false;
     adminMode = false;
+    setAdminModePreference(false);
     updateAdminButton();
     renderRecipeList();
     if (activeId) viewRecipe(activeId);
@@ -1110,8 +1142,8 @@
       source: document.getElementById('fieldSource').value,
     };
 
-    if (!body.title.trim() || !body.source.trim()) {
-      toast('Title and source are required');
+    if (!body.source.trim()) {
+      toast('Source is required');
       return;
     }
 
@@ -1133,6 +1165,7 @@
       toast('Session expired — please log in again');
       adminMode = false;
       authStatus.logged_in = false;
+      setAdminModePreference(false);
       updateAdminButton();
     } else {
       const err = await res.json();
@@ -1165,6 +1198,7 @@
       toast('Session expired — please log in again');
       adminMode = false;
       authStatus.logged_in = false;
+      setAdminModePreference(false);
       updateAdminButton();
     }
   }
@@ -1191,8 +1225,25 @@
     return div.innerHTML;
   }
 
-  fetchRecipes();
-  checkAuth();
+  function formatMetaValue(value) {
+    if (Array.isArray(value)) return value.join(', ');
+    if (value === null || value === undefined) return '';
+    return String(value);
+  }
+
+  async function initApp() {
+    await fetchRecipes();
+    await checkAuth();
+    if (getAdminModePreference()) {
+      if (!authStatus.password_set || authStatus.logged_in) {
+        activateAdmin();
+      } else {
+        setAdminModePreference(false);
+      }
+    }
+  }
+
+  initApp();
 </script>
 </body>
 </html>

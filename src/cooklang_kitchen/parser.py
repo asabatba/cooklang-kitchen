@@ -64,9 +64,20 @@ class Step:
 
 
 @dataclass
+class Note:
+    text: str
+    raw: str
+    section: str = ""
+
+    def to_dict(self):
+        return {"text": self.text, "raw": self.raw, "section": self.section}
+
+
+@dataclass
 class Recipe:
     metadata: dict = field(default_factory=dict)
     steps: list = field(default_factory=list)
+    notes: list = field(default_factory=list)
     ingredients: list = field(default_factory=list)
     cookware: list = field(default_factory=list)
     timers: list = field(default_factory=list)
@@ -75,6 +86,7 @@ class Recipe:
         return {
             "metadata": self.metadata,
             "steps": [s.to_dict() for s in self.steps],
+            "notes": [n.to_dict() for n in self.notes],
             "ingredients": [i.to_dict() for i in self.ingredients],
             "cookware": [c.to_dict() for c in self.cookware],
             "timers": [t.to_dict() for t in self.timers],
@@ -296,6 +308,32 @@ def _render_line(line: str, step_ingredients, step_cookware, step_timers):
     return rendered
 
 
+def _extract_title_description(metadata: dict) -> tuple[str | None, str | None]:
+    title = metadata.get("title")
+    if isinstance(title, list):
+        title = ", ".join(str(v) for v in title)
+    title = str(title).strip() if title is not None else None
+    if title == "":
+        title = None
+
+    description = metadata.get("description")
+    if description is None:
+        description = metadata.get("introduction")
+    if isinstance(description, list):
+        description = ", ".join(str(v) for v in description)
+    description = str(description).strip() if description is not None else None
+    if description == "":
+        description = None
+
+    return title, description
+
+
+def extract_recipe_fields(source: str) -> dict[str, str | None]:
+    parsed = parse(source)
+    title, description = _extract_title_description(parsed.metadata)
+    return {"title": title, "description": description}
+
+
 def parse(source: str) -> Recipe:
     """Parse a Cooklang source string into a Recipe object."""
     recipe = Recipe()
@@ -307,37 +345,34 @@ def parse(source: str) -> Recipe:
     source = BLOCK_COMMENT_RE.sub("", source)
 
     current_section = ""
+    paragraph_lines: list[str] = []
 
-    for line in source.split("\n"):
-        # Strip line comments
-        line = LINE_COMMENT_RE.sub("", line).strip()
+    def flush_paragraph():
+        if not paragraph_lines:
+            return
+        raw_paragraph = "\n".join(paragraph_lines).strip()
+        paragraph_lines.clear()
+        if not raw_paragraph:
+            return
 
-        if not line:
-            continue
+        note_lines = [ln[1:].strip() for ln in raw_paragraph.split("\n") if ln.strip().startswith(">")]
+        if note_lines and len(note_lines) == len([ln for ln in raw_paragraph.split("\n") if ln.strip()]):
+            recipe.notes.append(
+                Note(text="\n".join(note_lines), raw=raw_paragraph, section=current_section)
+            )
+            return
 
-        # Metadata
-        meta_m = META_RE.match(line)
-        if meta_m:
-            key = meta_m.group(1).strip().lower()
-            value = meta_m.group(2).strip()
-            recipe.metadata[key] = value
-            continue
-
-        # Section header
-        sec_m = SECTION_RE.match(line)
-        if sec_m:
-            current_section = sec_m.group(1).strip()
-            continue
-
-        # Regular step line
         step_ingredients = []
         step_cookware = []
         step_timers = []
-        rendered = _render_line(line, step_ingredients, step_cookware, step_timers)
-
+        rendered_lines = [
+            _render_line(ln, step_ingredients, step_cookware, step_timers)
+            for ln in raw_paragraph.split("\n")
+        ]
+        rendered = "\n".join(rendered_lines)
         step = Step(
             text=rendered,
-            raw=line,
+            raw=raw_paragraph,
             ingredients=step_ingredients,
             cookware=step_cookware,
             timers=step_timers,
@@ -347,6 +382,30 @@ def parse(source: str) -> Recipe:
         recipe.ingredients.extend(step_ingredients)
         recipe.cookware.extend(step_cookware)
         recipe.timers.extend(step_timers)
+
+    for raw_line in source.split("\n"):
+        line = LINE_COMMENT_RE.sub("", raw_line).strip()
+        if not line:
+            flush_paragraph()
+            continue
+
+        meta_m = META_RE.match(line)
+        if meta_m:
+            flush_paragraph()
+            key = meta_m.group(1).strip().lower()
+            value = meta_m.group(2).strip()
+            recipe.metadata[key] = value
+            continue
+
+        sec_m = SECTION_RE.match(line)
+        if sec_m:
+            flush_paragraph()
+            current_section = sec_m.group(1).strip()
+            continue
+
+        paragraph_lines.append(line)
+
+    flush_paragraph()
 
     return recipe
 
