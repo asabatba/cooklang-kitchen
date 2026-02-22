@@ -25,4 +25,8 @@ include-package-data = true
 where = ["src"]
 
 [tool.setuptools.package-data]
-cooklang_kitchen = ["templates/*.html"]
+cooklang_kitchen = [
+  "templates/*.html",
+  "static/css/*.css",
+  "static/js/*.js",
+]
