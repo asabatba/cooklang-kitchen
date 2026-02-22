@@ -87,6 +87,8 @@ class Recipe:
 
 # Metadata: >> key: value
 META_RE = re.compile(r"^>>\s*(.+?):\s*(.+)$")
+FRONT_MATTER_KEY_RE = re.compile(r"^\s*([A-Za-z0-9_-]+)\s*:\s*(.*)$")
+FRONT_MATTER_LIST_ITEM_RE = re.compile(r"^\s*-\s+(.*)$")
 
 # Section headers: == Section Name == or = Section Name
 SECTION_RE = re.compile(r"^=+\s*(.*?)\s*=*\s*$")
@@ -125,6 +127,91 @@ def _parse_qty_unit(raw: str):
         parts = raw.split("%", 1)
         return parts[0].strip(), parts[1].strip()
     return raw.strip(), ""
+
+
+def _normalize_meta_scalar(value: str) -> str:
+    value = value.strip()
+    if (
+        len(value) >= 2
+        and ((value.startswith('"') and value.endswith('"')) or (value.startswith("'") and value.endswith("'")))
+    ):
+        return value[1:-1].strip()
+    return value
+
+
+def _parse_front_matter_value(key: str, raw_value: str):
+    value = _normalize_meta_scalar(raw_value)
+
+    if value.startswith("[") and value.endswith("]"):
+        inner = value[1:-1].strip()
+        if not inner:
+            return []
+        return [_normalize_meta_scalar(part) for part in inner.split(",") if part.strip()]
+
+    # Accept simple CSV tags form: tags: vegan, indian, curry
+    if key == "tags" and "," in value:
+        return [_normalize_meta_scalar(part) for part in value.split(",") if part.strip()]
+
+    return value
+
+
+def _extract_front_matter(source: str) -> tuple[dict, str]:
+    lines = source.splitlines()
+    if not lines:
+        return {}, source
+
+    start = 0
+    while start < len(lines) and not lines[start].strip():
+        start += 1
+
+    if start >= len(lines) or lines[start].strip() != "---":
+        return {}, source
+
+    metadata = {}
+    current_key = None
+    current_list = []
+    i = start + 1
+
+    while i < len(lines):
+        line = lines[i]
+        stripped = line.strip()
+
+        if stripped == "---":
+            if current_key is not None:
+                metadata[current_key] = current_list
+            body = "\n".join(lines[i + 1 :])
+            return metadata, body
+
+        kv_match = FRONT_MATTER_KEY_RE.match(line)
+        if kv_match:
+            if current_key is not None:
+                metadata[current_key] = current_list
+                current_key = None
+                current_list = []
+
+            key = kv_match.group(1).strip().lower()
+            raw_value = kv_match.group(2).strip()
+            if raw_value == "":
+                current_key = key
+                current_list = []
+            else:
+                metadata[key] = _parse_front_matter_value(key, raw_value)
+            i += 1
+            continue
+
+        list_match = FRONT_MATTER_LIST_ITEM_RE.match(line)
+        if list_match and current_key is not None:
+            item = _normalize_meta_scalar(list_match.group(1))
+            if item:
+                current_list.append(item)
+            i += 1
+            continue
+
+        # If content doesn't look like front matter, treat all as recipe body.
+        return {}, source
+
+    # Unclosed front matter block, keep original source untouched.
+    return {}, source
 
 
 def _parse_fraction(s: str) -> float | None:
@@ -212,6 +299,9 @@ def _render_line(line: str, step_ingredients, step_cookware, step_timers):
 def parse(source: str) -> Recipe:
     """Parse a Cooklang source string into a Recipe object."""
     recipe = Recipe()
+
+    front_matter, source = _extract_front_matter(source)
+    recipe.metadata.update(front_matter)
 
     # Remove block comments
     source = BLOCK_COMMENT_RE.sub("", source)
