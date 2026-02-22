@@ -19,7 +19,9 @@ def login():
     password = data.get("password", "")
 
     if verify_password(password):
+        session.permanent = True
         session["admin"] = True
+        session.modified = True
         return jsonify({"ok": True})
 
     return jsonify({"error": "Wrong password"}), 403

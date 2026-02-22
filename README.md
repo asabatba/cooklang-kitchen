@@ -57,10 +57,14 @@ cooklang-kitchen set-password --remove
 
 Environment variables:
 
-- `SECRET_KEY`: Flask session secret (required in production)
+- `SECRET_KEY`: Flask session secret (recommended in production)
+- `SECRET_FILE`: fallback file path for generated session secret (default: `${DATA_DIR}/.secret_key`)
 - `DATA_DIR`: base data directory (default: `./data`)
 - `DB_PATH`: SQLite DB path (default: `${DATA_DIR}/recipes.db`)
 - `PASSWORD_FILE`: admin password hash path (default: `${DATA_DIR}/.admin_password`)
+- `SESSION_COOKIE_SECURE`: set `true` behind HTTPS
+- `SESSION_COOKIE_SAMESITE`: cookie policy (default: `Lax`)
+- `SESSION_DAYS`: login session duration in days (default: `14`)
 
 ## CapRover deployment
 
@@ -79,4 +83,5 @@ caprover deploy
 Recommended CapRover app settings:
 
 - Environment variable: `SECRET_KEY=<strong-random-value>`
+- Environment variable: `SESSION_COOKIE_SECURE=true`
 - Persistent directory mapping for `/app/data`
