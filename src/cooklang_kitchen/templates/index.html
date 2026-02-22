@@ -1044,7 +1044,7 @@
   <script>
     // ---- State ----
     let recipes = [];
-    let selectedIds = new Set();
+    const selectedIds = new Set();
     let activeId = null;
     let activeData = null; // full recipe data for the currently viewed recipe
     let searchFilter = '';
@@ -1144,7 +1144,7 @@
     // ---- Copy / Export helpers ----
     function recipeToText(data) {
       const p = data.parsed;
-      let lines = [];
+      const lines = [];
       lines.push(data.title.toUpperCase());
       if (data.description) lines.push(data.description);
       lines.push('');
@@ -1174,7 +1174,7 @@
 
     function recipeToMarkdown(data) {
       const p = data.parsed;
-      let lines = [];
+      const lines = [];
       lines.push(`# ${data.title}`);
       if (data.description) lines.push(`*${data.description}*`);
       lines.push('');
@@ -1208,7 +1208,7 @@
 
     function shoppingToText() {
       if (!lastShoppingData) return '';
-      let lines = ['SHOPPING LIST'];
+      const lines = ['SHOPPING LIST'];
       if (lastShoppingData.recipes) lines.push('For: ' + lastShoppingData.recipes.join(', '));
       lines.push('');
       for (const ing of lastShoppingData.ingredients) {
@@ -1220,7 +1220,7 @@
 
     function shoppingToMarkdown() {
       if (!lastShoppingData) return '';
-      let lines = ['# Shopping List'];
+      const lines = ['# Shopping List'];
       if (lastShoppingData.recipes) lines.push('*' + lastShoppingData.recipes.join(', ') + '*');
       lines.push('');
       for (const ing of lastShoppingData.ingredients) {
@@ -1379,7 +1379,7 @@
     const CK_TOKEN_RE = /(@([^\s@#~{}]+(?:\s+[^\s@#~{}]+)*?)\{([^}]*)\}(?:\(([^)]*)\))?)|(@([a-zA-Z\u00C0-\u024F][a-zA-Z0-9\u00C0-\u024F _-]*))|(#([^\s@#~{}]+(?:\s+[^\s@#~{}]+)*?)\{([^}]*)\}(?:\(([^)]*)\))?)|(#([a-zA-Z\u00C0-\u024F][a-zA-Z0-9\u00C0-\u024F _-]*))|(~([^\s@#~{}]*)\{([^}]*)\})/g;
 
     function highlightStep(step) {
-      return step.raw.replace(CK_TOKEN_RE, function (match, iBrace, iName, iQty, iPrep, iBare, iBareName, cBrace, cName, cQty, cPrep, cBare, cBareName, tm, tName, tQty) {
+      return step.raw.replace(CK_TOKEN_RE, (match, iBrace, iName, iQty, iPrep, iBare, iBareName, cBrace, cName, cQty, cPrep, cBare, cBareName, tm, tName, tQty) => {
         if (iBrace) {
           // @ingredient{qty%unit}(prep)
           const [qty, unit] = (iQty || '').includes('%') ? iQty.split('%', 2) : [iQty, ''];
@@ -1417,7 +1417,7 @@
       text = text.replace(/^(=+\s*.*?=*\s*)$/gm, '<span class="ck-section">$1</span>');
       // Single-pass for @, #, ~ tokens
       const SRC_RE = /(@[^\s@#~{}]+(?:\s+[^\s@#~{}]+)*?\{[^}]*\}(?:\([^)]*\))?)|(&#64;[a-zA-Z\u00C0-\u024F][a-zA-Z0-9\u00C0-\u024F _-]*)|(@[a-zA-Z\u00C0-\u024F][a-zA-Z0-9\u00C0-\u024F _-]*)|(#[^\s@#~{}]+(?:\s+[^\s@#~{}]+)*?\{[^}]*\})|(#[a-zA-Z\u00C0-\u024F][a-zA-Z0-9\u00C0-\u024F _-]*)|(~[^\s@#~{}]*\{[^}]*\})/g;
-      text = text.replace(SRC_RE, function (m, ingB, _skip, ingN, cwB, cwN, timer) {
+      text = text.replace(SRC_RE, (m, ingB, _skip, ingN, cwB, cwN, timer) => {
         if (ingB) return '<span class="ck-ing">' + ingB + '</span>';
         if (ingN) return '<span class="ck-ing">' + ingN + '</span>';
         if (cwB) return '<span class="ck-cw">' + cwB + '</span>';
