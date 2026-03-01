@@ -215,6 +215,12 @@ function formatClock(totalSec) {
   return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
 }
 
+function formatCountdownDisplay(remainingSec) {
+  const sec = Math.floor(remainingSec || 0);
+  if (sec < 0) return `+${formatClock(Math.abs(sec))}`;
+  return formatClock(sec);
+}
+
 function buildStepTimersForRecipe(recipeData, stepIndex) {
   const step = recipeData?.parsed?.steps?.[stepIndex];
   if (!step || !Array.isArray(step.timers)) return [];
@@ -241,14 +247,23 @@ function buildStepTimersForRecipe(recipeData, stepIndex) {
 }
 
 function getRemainingSeconds(runtime, nowMs = Date.now()) {
-  if (runtime.status === 'paused') return Math.max(0, Math.round(runtime.pausedRemainingSec || 0));
-  if (runtime.status !== 'running') return 0;
-  return Math.max(0, Math.ceil((runtime.endsAtMs - nowMs) / 1000));
+  if (runtime.status === 'paused') return Math.round(runtime.pausedRemainingSec || 0);
+  if (runtime.status === 'running') return Math.max(0, Math.ceil((runtime.endsAtMs - nowMs) / 1000));
+  if (runtime.status === 'overdue') {
+    const overdueStart = runtime.overdueSinceMs || runtime.endsAtMs || nowMs;
+    return -Math.max(0, Math.floor((nowMs - overdueStart) / 1000));
+  }
+  return 0;
 }
 
 function getElapsedSeconds(runtime, nowMs = Date.now()) {
+  if (runtime.status === 'overdue') {
+    const overdueStart = runtime.overdueSinceMs || runtime.endsAtMs || nowMs;
+    const overtime = Math.max(0, Math.floor((nowMs - overdueStart) / 1000));
+    return runtime.durationSec + overtime;
+  }
   const remaining = getRemainingSeconds(runtime, nowMs);
-  return Math.max(0, runtime.durationSec - remaining);
+  return Math.max(0, runtime.durationSec - Math.max(0, remaining));
 }
 
 function serializeRuntime(runtime) {
@@ -265,6 +280,8 @@ function serializeRuntime(runtime) {
     startedAtMs: runtime.startedAtMs,
     endsAtMs: runtime.endsAtMs,
     pausedRemainingSec: runtime.pausedRemainingSec,
+    pausedFromStatus: runtime.pausedFromStatus || null,
+    overdueSinceMs: runtime.overdueSinceMs || null,
     pendingQueue: runtime.pendingQueue || [],
   };
 }
@@ -313,15 +330,21 @@ function restoreTimersFromStorage() {
         timerIndex: Number(item.timerIndex),
         label: String(item.label || 'Timer'),
         durationSec: Number(item.durationSec),
-        status: item.status === 'paused' ? 'paused' : 'running',
+        status: item.status === 'paused' || item.status === 'overdue' ? item.status : 'running',
         startedAtMs: Number(item.startedAtMs) || now,
         endsAtMs: Number(item.endsAtMs) || now,
         pausedRemainingSec: item.pausedRemainingSec === null ? null : Number(item.pausedRemainingSec),
+        pausedFromStatus: typeof item.pausedFromStatus === 'string' ? item.pausedFromStatus : null,
+        overdueSinceMs: item.overdueSinceMs === null || item.overdueSinceMs === undefined ? null : Number(item.overdueSinceMs),
         pendingQueue: Array.isArray(item.pendingQueue) ? item.pendingQueue.filter(p => p && typeof p === 'object') : [],
       };
 
       if (runtime.status === 'running' && runtime.endsAtMs <= now) {
-        runtime.endsAtMs = now;
+        runtime.status = 'overdue';
+        runtime.overdueSinceMs = runtime.endsAtMs;
+      }
+      if (runtime.status === 'overdue' && !Number.isFinite(runtime.overdueSinceMs)) {
+        runtime.overdueSinceMs = runtime.endsAtMs || now;
       }
       timerStore.active.set(runtime.timerId, runtime);
     }
@@ -407,7 +430,7 @@ function startTimerDescriptor(descriptor, pendingQueue = [], options = {}) {
   const { fromChain = false } = options;
 
   const existing = timerStore.active.get(descriptor.timerId);
-  if (existing && (existing.status === 'running' || existing.status === 'paused')) {
+  if (existing && (existing.status === 'running' || existing.status === 'paused' || existing.status === 'overdue')) {
     renderTimerDock();
     refreshActiveRecipeTimerUI();
     return existing;
@@ -427,6 +450,8 @@ function startTimerDescriptor(descriptor, pendingQueue = [], options = {}) {
     startedAtMs: now,
     endsAtMs: now + (descriptor.durationSec * 1000),
     pausedRemainingSec: null,
+    pausedFromStatus: null,
+    overdueSinceMs: null,
     pendingQueue,
   };
 
@@ -462,8 +487,9 @@ function startStepTimersForRecipe(recipeData, stepIndex) {
 
 function pauseTimerById(timerId) {
   const rt = timerStore.active.get(timerId);
-  if (!rt || rt.status !== 'running') return;
+  if (!rt || (rt.status !== 'running' && rt.status !== 'overdue')) return;
   rt.pausedRemainingSec = getRemainingSeconds(rt);
+  rt.pausedFromStatus = rt.status;
   rt.status = 'paused';
   saveTimersToStorage();
   renderTimerDock();
@@ -474,11 +500,19 @@ function resumeTimerById(timerId) {
   const rt = timerStore.active.get(timerId);
   if (!rt || rt.status !== 'paused') return;
   const now = Date.now();
-  const remaining = Math.max(1, Math.round(rt.pausedRemainingSec || rt.durationSec));
-  rt.startedAtMs = now - ((rt.durationSec - remaining) * 1000);
-  rt.endsAtMs = now + (remaining * 1000);
+  const previousStatus = rt.pausedFromStatus || 'running';
+  const remaining = Math.round(rt.pausedRemainingSec || rt.durationSec);
+  if (previousStatus === 'overdue' || remaining < 0) {
+    rt.status = 'overdue';
+    rt.overdueSinceMs = now - (Math.abs(remaining) * 1000);
+  } else {
+    const safeRemaining = Math.max(1, remaining);
+    rt.startedAtMs = now - ((rt.durationSec - safeRemaining) * 1000);
+    rt.endsAtMs = now + (safeRemaining * 1000);
+    rt.status = 'running';
+  }
   rt.pausedRemainingSec = null;
-  rt.status = 'running';
+  rt.pausedFromStatus = null;
   ensureTimerTicker();
   saveTimersToStorage();
   renderTimerDock();
@@ -486,9 +520,17 @@ function resumeTimerById(timerId) {
 }
 
 function stopTimerById(timerId) {
-  if (!timerStore.active.has(timerId)) return;
+  const rt = timerStore.active.get(timerId);
+  if (!rt) return;
   timerStore.active.delete(timerId);
   timerStore.completed.delete(timerId);
+  if (rt.pendingQueue && rt.pendingQueue.length > 0) {
+    const next = rt.pendingQueue[0];
+    const rest = rt.pendingQueue.slice(1);
+    startTimerDescriptor(next, rest, { fromChain: true });
+  } else if (rt.status === 'overdue') {
+    toast(`Step ${rt.stepNumber} complete for ${rt.recipeTitle}`);
+  }
   saveTimersToStorage();
   stopTimerTickerIfIdle();
   renderTimerDock();
@@ -556,20 +598,31 @@ function completeRuntimeTimer(runtime, options = {}) {
 function tickTimers(options = {}) {
   const { silentRestored = false } = options;
   const now = Date.now();
-  const toFinish = [];
+  const toOverdue = [];
+  let stateChanged = false;
 
   for (const rt of timerStore.active.values()) {
-    if (rt.status === 'running' && rt.endsAtMs <= now) toFinish.push(rt);
+    if (rt.status === 'running' && rt.endsAtMs <= now) toOverdue.push(rt);
   }
 
   for (const done of timerStore.completed.values()) {
-    if (done.expiresAtMs <= now) timerStore.completed.delete(done.timerId);
+    if (done.expiresAtMs <= now) {
+      timerStore.completed.delete(done.timerId);
+      stateChanged = true;
+    }
   }
 
-  for (const rt of toFinish) {
-    completeRuntimeTimer(rt, { silent: silentRestored });
+  for (const rt of toOverdue) {
+    rt.status = 'overdue';
+    rt.overdueSinceMs = rt.endsAtMs || now;
+    stateChanged = true;
+    if (!silentRestored) {
+      playTimerDoneBeep();
+      toast(`Timer done: ${rt.label}`);
+    }
   }
 
+  if (stateChanged) saveTimersToStorage();
   renderTimerDock();
   refreshActiveRecipeTimerUI();
   stopTimerTickerIfIdle();
@@ -602,9 +655,9 @@ function renderStepTimerRow(recipeData, stepIndex) {
 
   const active = findStepActiveTimer(recipeData.id, stepIndex);
   if (active) {
-    const remaining = formatClock(getRemainingSeconds(active));
+    const remaining = formatCountdownDisplay(getRemainingSeconds(active));
     const elapsed = formatClock(getElapsedSeconds(active));
-    const status = active.status === 'paused' ? 'Paused' : 'Running';
+    const status = active.status === 'paused' ? 'Paused' : active.status === 'overdue' ? 'Overtime' : 'Running';
     return `
       <div class="step-timer-meta">
         <span class="timer-chip ${active.status}">${status}</span>
@@ -613,7 +666,7 @@ function renderStepTimerRow(recipeData, stepIndex) {
         <span class="timer-elapsed">elapsed ${elapsed}</span>
       </div>
       <div class="timer-controls">
-        ${active.status === 'running'
+        ${(active.status === 'running' || active.status === 'overdue')
           ? `<button type="button" class="step-timer-btn" onclick="pauseTimerById('${active.timerId}')">Pause</button>`
           : `<button type="button" class="step-timer-btn" onclick="resumeTimerById('${active.timerId}')">Resume</button>`}
         <button type="button" class="step-timer-btn" onclick="skipTimerById('${active.timerId}')">Skip</button>
@@ -646,10 +699,11 @@ function renderRecipeTimerPanel() {
   html += `<div class="recipe-timer-head"><strong>${timers.length}</strong> active timer${timers.length > 1 ? 's' : ''}</div>`;
   html += '<div class="recipe-timer-list">';
   for (const rt of timers) {
+    const statusLabel = rt.status === 'paused' ? 'Paused' : rt.status === 'overdue' ? 'Overtime' : 'Running';
     html += `<div class="recipe-timer-item">
-      <span class="timer-chip ${rt.status}">${rt.status === 'paused' ? 'Paused' : 'Running'}</span>
+      <span class="timer-chip ${rt.status}">${statusLabel}</span>
       <span>Step ${rt.stepNumber}: ${esc(rt.label)}</span>
-      <strong>${formatClock(getRemainingSeconds(rt))}</strong>
+      <strong>${formatCountdownDisplay(getRemainingSeconds(rt))}</strong>
     </div>`;
   }
   html += '</div>';
@@ -693,7 +747,8 @@ function renderTimerDock() {
   if (!dock) return;
 
   const active = Array.from(timerStore.active.values()).sort((a, b) => {
-    if (a.status !== b.status) return a.status === 'running' ? -1 : 1;
+    const rank = s => (s === 'overdue' ? 0 : s === 'running' ? 1 : 2);
+    if (a.status !== b.status) return rank(a.status) - rank(b.status);
     return a.endsAtMs - b.endsAtMs;
   });
   const completed = Array.from(timerStore.completed.values()).sort((a, b) => b.expiresAtMs - a.expiresAtMs);
@@ -716,13 +771,14 @@ function renderTimerDock() {
     html += '<div class="timer-dock-list">';
 
     for (const rt of active) {
-      const remaining = formatClock(getRemainingSeconds(rt));
+      const remaining = formatCountdownDisplay(getRemainingSeconds(rt));
       const elapsed = formatClock(getElapsedSeconds(rt));
+      const statusLabel = rt.status === 'paused' ? 'Paused' : rt.status === 'overdue' ? 'Overtime' : 'Running';
       const canOpen = recipeExists(rt.recipeId);
       html += `
-      <div class="timer-dock-item ${rt.status === 'paused' ? 'paused' : 'running'}">
+      <div class="timer-dock-item ${rt.status}">
         <div class="timer-dock-item-head">
-          <span class="timer-chip ${rt.status}">${rt.status === 'paused' ? 'Paused' : 'Running'}</span>
+          <span class="timer-chip ${rt.status}">${statusLabel}</span>
           ${canOpen
             ? `<button type="button" class="timer-link" onclick="openRecipeFromTimer(${rt.recipeId})">${esc(rt.recipeTitle)}</button>`
             : `<span class="timer-link disabled">${esc(rt.recipeTitle)} (deleted)</span>`}
@@ -733,7 +789,7 @@ function renderTimerDock() {
           <div class="timer-dock-clocks"><strong>${remaining}</strong><span>elapsed ${elapsed}</span></div>
         </div>
         <div class="timer-controls">
-          ${rt.status === 'running'
+          ${(rt.status === 'running' || rt.status === 'overdue')
             ? `<button type="button" class="step-timer-btn" onclick="pauseTimerById('${rt.timerId}')">Pause</button>`
             : `<button type="button" class="step-timer-btn" onclick="resumeTimerById('${rt.timerId}')">Resume</button>`}
           <button type="button" class="step-timer-btn" onclick="skipTimerById('${rt.timerId}')">Skip</button>
