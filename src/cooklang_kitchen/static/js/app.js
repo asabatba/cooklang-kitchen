@@ -6,7 +6,18 @@ let activeData = null; // full recipe data for the currently viewed recipe
 let searchFilter = '';
 let adminMode = false;
 const ADMIN_MODE_PREF_KEY = 'cooklang_admin_mode_preference';
+const TIMER_STORAGE_KEY = 'cooklang_timers_v1';
+const RECIPE_SELECTION_STORAGE_KEY = 'cooklang_recipe_selection_v1';
+const TIMER_COMPLETE_TTL_MS = 15000;
 let lastShoppingData = null;
+let recipeLoadToken = 0;
+let timerDockCollapsed = false;
+
+const timerStore = {
+  active: new Map(),
+  completed: new Map(),
+  tickHandle: null,
+};
 
 // ---- API ----
 async function fetchRecipes() {
@@ -17,6 +28,7 @@ async function fetchRecipes() {
 
 async function fetchRecipeDetail(id) {
   const res = await fetch(`/api/recipes/${id}`);
+  if (!res.ok) throw new Error(`Failed to load recipe ${id}`);
   return await res.json();
 }
 
@@ -36,6 +48,708 @@ function toast(msg) {
   el.textContent = msg;
   document.body.appendChild(el);
   setTimeout(() => el.remove(), 2200);
+}
+
+// ---- URL selection ----
+function recipeExists(id) {
+  return recipes.some(r => r.id === id);
+}
+
+function getRecipeIdFromUrl() {
+  const params = new URLSearchParams(window.location.search);
+  const raw = params.get('recipe');
+  if (!raw) return null;
+  const id = parseInt(raw, 10);
+  return Number.isInteger(id) && id > 0 ? id : null;
+}
+
+function setRecipeIdInUrl(id, options = {}) {
+  const { replace = false } = options;
+  const url = new URL(window.location.href);
+  const current = getRecipeIdFromUrl();
+  if (id === null) url.searchParams.delete('recipe');
+  else url.searchParams.set('recipe', String(id));
+
+  if (current === id && !replace) return;
+
+  const next = `${url.pathname}${url.search}${url.hash}`;
+  if (replace) history.replaceState({ recipeId: id }, '', next);
+  else history.pushState({ recipeId: id }, '', next);
+}
+
+function persistRecipeSelection(id) {
+  try {
+    if (id === null || id === undefined) localStorage.removeItem(RECIPE_SELECTION_STORAGE_KEY);
+    else localStorage.setItem(RECIPE_SELECTION_STORAGE_KEY, String(id));
+  } catch {
+    // Ignore storage failures.
+  }
+}
+
+function getFallbackRecipeSelection() {
+  try {
+    const raw = localStorage.getItem(RECIPE_SELECTION_STORAGE_KEY);
+    if (!raw) return null;
+    const id = parseInt(raw, 10);
+    return Number.isInteger(id) && id > 0 ? id : null;
+  } catch {
+    return null;
+  }
+}
+
+function clearRecipeSelection(options = {}) {
+  const { syncUrl = true, replaceUrl = true } = options;
+  activeId = null;
+  activeData = null;
+  renderRecipeList();
+  if (syncUrl) setRecipeIdInUrl(null, { replace: replaceUrl });
+  persistRecipeSelection(null);
+  document.getElementById('mainContent').innerHTML = `
+    <div class="empty-state">
+      <div class="icon">📖</div>
+      <h2>Choose a recipe</h2>
+      <p>Select a recipe from the sidebar to view it,<br>or check multiple to build a shopping list.</p>
+    </div>`;
+}
+
+async function syncSelectionFromUrl() {
+  const routeId = getRecipeIdFromUrl();
+  if (routeId && recipeExists(routeId)) {
+    await viewRecipe(routeId, { syncUrl: false, closePanels: false });
+    return;
+  }
+  if (routeId && !recipeExists(routeId)) {
+    setRecipeIdInUrl(null, { replace: true });
+  }
+  const fallbackId = getFallbackRecipeSelection();
+  if (fallbackId && recipeExists(fallbackId)) {
+    setRecipeIdInUrl(fallbackId, { replace: true });
+    await viewRecipe(fallbackId, { syncUrl: false, closePanels: false });
+    return;
+  }
+  clearRecipeSelection({ syncUrl: false });
+}
+
+window.addEventListener('popstate', () => {
+  syncSelectionFromUrl();
+});
+
+// ---- Timer helpers ----
+function buildTimerId(recipeId, stepIndex, timerIndex) {
+  return `${recipeId}:${stepIndex}:${timerIndex}`;
+}
+
+function normalizeTimerUnit(unitRaw) {
+  const unit = (unitRaw || '').trim().toLowerCase().replace(/\./g, '');
+  const map = {
+    // English
+    s: 'seconds', sec: 'seconds', secs: 'seconds', second: 'seconds', seconds: 'seconds',
+    m: 'minutes', min: 'minutes', mins: 'minutes', minute: 'minutes', minutes: 'minutes',
+    h: 'hours', hr: 'hours', hrs: 'hours', hour: 'hours', hours: 'hours',
+    // Spanish
+    seg: 'seconds', segs: 'seconds', segundo: 'seconds', segundos: 'seconds',
+    minuto: 'minutes', minutos: 'minutes',
+    hora: 'hours', horas: 'hours',
+  };
+  return map[unit] || '';
+}
+
+function parseQuantityNumber(raw) {
+  const value = String(raw || '').trim().replace(',', '.');
+  if (!value) return null;
+
+  const mixed = value.match(/^(\d+)\s+(\d+)\/(\d+)$/);
+  if (mixed) {
+    const whole = Number(mixed[1]);
+    const num = Number(mixed[2]);
+    const den = Number(mixed[3]);
+    if (den === 0) return null;
+    return whole + (num / den);
+  }
+
+  const frac = value.match(/^(\d+)\/(\d+)$/);
+  if (frac) {
+    const num = Number(frac[1]);
+    const den = Number(frac[2]);
+    if (den === 0) return null;
+    return num / den;
+  }
+
+  const n = Number(value);
+  if (!Number.isFinite(n)) return null;
+  return n;
+}
+
+function parseTimerQuantityToSeconds(quantity, unit) {
+  const amount = parseQuantityNumber(quantity);
+  if (amount === null || amount <= 0) return null;
+  const normalized = normalizeTimerUnit(unit);
+  if (normalized === 'seconds') return Math.max(1, Math.round(amount));
+  if (normalized === 'minutes') return Math.max(1, Math.round(amount * 60));
+  if (normalized === 'hours') return Math.max(1, Math.round(amount * 3600));
+  return null;
+}
+
+function formatClock(totalSec) {
+  const sec = Math.max(0, Math.floor(totalSec || 0));
+  const h = Math.floor(sec / 3600);
+  const m = Math.floor((sec % 3600) / 60);
+  const s = sec % 60;
+  if (h > 0) return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+  return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+}
+
+function buildStepTimersForRecipe(recipeData, stepIndex) {
+  const step = recipeData?.parsed?.steps?.[stepIndex];
+  if (!step || !Array.isArray(step.timers)) return [];
+
+  const list = [];
+  step.timers.forEach((tm, timerIndex) => {
+    const durationSec = parseTimerQuantityToSeconds(tm.quantity, tm.unit);
+    if (!durationSec) return;
+    const qty = [tm.quantity, tm.unit].filter(Boolean).join(' ');
+    const label = tm.name ? `${tm.name}${qty ? ` (${qty})` : ''}` : qty;
+    list.push({
+      timerId: buildTimerId(recipeData.id, stepIndex, timerIndex),
+      recipeId: recipeData.id,
+      recipeTitle: recipeData.title,
+      stepIndex,
+      stepNumber: stepIndex + 1,
+      timerIndex,
+      label: label || 'Timer',
+      durationSec,
+    });
+  });
+
+  return list;
+}
+
+function getRemainingSeconds(runtime, nowMs = Date.now()) {
+  if (runtime.status === 'paused') return Math.max(0, Math.round(runtime.pausedRemainingSec || 0));
+  if (runtime.status !== 'running') return 0;
+  return Math.max(0, Math.ceil((runtime.endsAtMs - nowMs) / 1000));
+}
+
+function getElapsedSeconds(runtime, nowMs = Date.now()) {
+  const remaining = getRemainingSeconds(runtime, nowMs);
+  return Math.max(0, runtime.durationSec - remaining);
+}
+
+function serializeRuntime(runtime) {
+  return {
+    timerId: runtime.timerId,
+    recipeId: runtime.recipeId,
+    recipeTitle: runtime.recipeTitle,
+    stepIndex: runtime.stepIndex,
+    stepNumber: runtime.stepNumber,
+    timerIndex: runtime.timerIndex,
+    label: runtime.label,
+    durationSec: runtime.durationSec,
+    status: runtime.status,
+    startedAtMs: runtime.startedAtMs,
+    endsAtMs: runtime.endsAtMs,
+    pausedRemainingSec: runtime.pausedRemainingSec,
+    pendingQueue: runtime.pendingQueue || [],
+  };
+}
+
+function saveTimersToStorage() {
+  try {
+    if (timerStore.active.size === 0) {
+      localStorage.removeItem(TIMER_STORAGE_KEY);
+      return;
+    }
+    const payload = {
+      active: Array.from(timerStore.active.values()).map(serializeRuntime),
+      savedAtMs: Date.now(),
+    };
+    localStorage.setItem(TIMER_STORAGE_KEY, JSON.stringify(payload));
+  } catch {
+    // Ignore storage failures.
+  }
+}
+
+function restoreTimersFromStorage() {
+  let raw = null;
+  try {
+    raw = localStorage.getItem(TIMER_STORAGE_KEY);
+  } catch {
+    raw = null;
+  }
+  if (!raw) return;
+
+  try {
+    const payload = JSON.parse(raw);
+    if (!payload || !Array.isArray(payload.active)) return;
+
+    const now = Date.now();
+    for (const item of payload.active) {
+      if (!item || typeof item !== 'object') continue;
+      if (typeof item.timerId !== 'string') continue;
+      if (!Number.isFinite(item.durationSec) || item.durationSec <= 0) continue;
+
+      const runtime = {
+        timerId: item.timerId,
+        recipeId: Number(item.recipeId),
+        recipeTitle: String(item.recipeTitle || `Recipe #${Number(item.recipeId)}`),
+        stepIndex: Number(item.stepIndex),
+        stepNumber: Number(item.stepNumber) || (Number(item.stepIndex) + 1),
+        timerIndex: Number(item.timerIndex),
+        label: String(item.label || 'Timer'),
+        durationSec: Number(item.durationSec),
+        status: item.status === 'paused' ? 'paused' : 'running',
+        startedAtMs: Number(item.startedAtMs) || now,
+        endsAtMs: Number(item.endsAtMs) || now,
+        pausedRemainingSec: item.pausedRemainingSec === null ? null : Number(item.pausedRemainingSec),
+        pendingQueue: Array.isArray(item.pendingQueue) ? item.pendingQueue.filter(p => p && typeof p === 'object') : [],
+      };
+
+      if (runtime.status === 'running' && runtime.endsAtMs <= now) {
+        runtime.endsAtMs = now;
+      }
+      timerStore.active.set(runtime.timerId, runtime);
+    }
+
+    if (timerStore.active.size > 0) {
+      ensureTimerTicker();
+      tickTimers({ silentRestored: true });
+    }
+  } catch {
+    try {
+      localStorage.removeItem(TIMER_STORAGE_KEY);
+    } catch {
+      // Ignore cleanup errors.
+    }
+  }
+}
+
+function playTimerDoneBeep() {
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = 'sine';
+    osc.frequency.value = 880;
+    gain.gain.value = 0.04;
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    const now = ctx.currentTime;
+    osc.start(now);
+    gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.18);
+    osc.stop(now + 0.18);
+  } catch {
+    // Audio playback can fail due to browser policy; ignore.
+  }
+}
+
+function ensureTimerTicker() {
+  if (timerStore.tickHandle) return;
+  timerStore.tickHandle = window.setInterval(() => tickTimers(), 1000);
+}
+
+function stopTimerTickerIfIdle() {
+  if (timerStore.active.size > 0 || timerStore.completed.size > 0) return;
+  if (timerStore.tickHandle) {
+    clearInterval(timerStore.tickHandle);
+    timerStore.tickHandle = null;
+  }
+}
+
+function findStepActiveTimer(recipeId, stepIndex) {
+  const candidates = [];
+  for (const rt of timerStore.active.values()) {
+    if (rt.recipeId === recipeId && rt.stepIndex === stepIndex) candidates.push(rt);
+  }
+  candidates.sort((a, b) => a.timerIndex - b.timerIndex);
+  return candidates[0] || null;
+}
+
+function stepHasActiveTimer(recipeId, stepIndex) {
+  return !!findStepActiveTimer(recipeId, stepIndex);
+}
+
+function stepWasRecentlyCompleted(recipeId, stepIndex) {
+  const now = Date.now();
+  for (const done of timerStore.completed.values()) {
+    if (done.recipeId === recipeId && done.stepIndex === stepIndex && done.expiresAtMs > now && done.stepComplete) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function stopTimersForStep(recipeId, stepIndex, suppressSave = false) {
+  const toDelete = [];
+  for (const [timerId, rt] of timerStore.active.entries()) {
+    if (rt.recipeId === recipeId && rt.stepIndex === stepIndex) toDelete.push(timerId);
+  }
+  toDelete.forEach(timerId => timerStore.active.delete(timerId));
+  if (!suppressSave) saveTimersToStorage();
+}
+
+function startTimerDescriptor(descriptor, pendingQueue = [], options = {}) {
+  const { fromChain = false } = options;
+
+  const existing = timerStore.active.get(descriptor.timerId);
+  if (existing && (existing.status === 'running' || existing.status === 'paused')) {
+    renderTimerDock();
+    refreshActiveRecipeTimerUI();
+    return existing;
+  }
+
+  const now = Date.now();
+  const runtime = {
+    timerId: descriptor.timerId,
+    recipeId: descriptor.recipeId,
+    recipeTitle: descriptor.recipeTitle,
+    stepIndex: descriptor.stepIndex,
+    stepNumber: descriptor.stepNumber,
+    timerIndex: descriptor.timerIndex,
+    label: descriptor.label,
+    durationSec: descriptor.durationSec,
+    status: 'running',
+    startedAtMs: now,
+    endsAtMs: now + (descriptor.durationSec * 1000),
+    pausedRemainingSec: null,
+    pendingQueue,
+  };
+
+  timerStore.active.set(runtime.timerId, runtime);
+  timerStore.completed.delete(runtime.timerId);
+  ensureTimerTicker();
+  saveTimersToStorage();
+
+  if (!fromChain) toast(`Started timer: ${runtime.label}`);
+
+  renderTimerDock();
+  refreshActiveRecipeTimerUI();
+  return runtime;
+}
+
+function startStepTimersForRecipe(recipeData, stepIndex) {
+  if (!recipeData) return;
+  const descriptors = buildStepTimersForRecipe(recipeData, stepIndex);
+  if (!descriptors.length) {
+    toast('This step has no valid timer duration.');
+    return;
+  }
+
+  const existing = findStepActiveTimer(recipeData.id, stepIndex);
+  if (existing) {
+    const ok = confirm('A timer is already running for this step. Replace it?');
+    if (!ok) return;
+    stopTimersForStep(recipeData.id, stepIndex, true);
+  }
+
+  startTimerDescriptor(descriptors[0], descriptors.slice(1));
+}
+
+function pauseTimerById(timerId) {
+  const rt = timerStore.active.get(timerId);
+  if (!rt || rt.status !== 'running') return;
+  rt.pausedRemainingSec = getRemainingSeconds(rt);
+  rt.status = 'paused';
+  saveTimersToStorage();
+  renderTimerDock();
+  refreshActiveRecipeTimerUI();
+}
+
+function resumeTimerById(timerId) {
+  const rt = timerStore.active.get(timerId);
+  if (!rt || rt.status !== 'paused') return;
+  const now = Date.now();
+  const remaining = Math.max(1, Math.round(rt.pausedRemainingSec || rt.durationSec));
+  rt.startedAtMs = now - ((rt.durationSec - remaining) * 1000);
+  rt.endsAtMs = now + (remaining * 1000);
+  rt.pausedRemainingSec = null;
+  rt.status = 'running';
+  ensureTimerTicker();
+  saveTimersToStorage();
+  renderTimerDock();
+  refreshActiveRecipeTimerUI();
+}
+
+function stopTimerById(timerId) {
+  if (!timerStore.active.has(timerId)) return;
+  timerStore.active.delete(timerId);
+  timerStore.completed.delete(timerId);
+  saveTimersToStorage();
+  stopTimerTickerIfIdle();
+  renderTimerDock();
+  refreshActiveRecipeTimerUI();
+}
+
+function skipTimerById(timerId) {
+  const rt = timerStore.active.get(timerId);
+  if (!rt) return;
+  completeRuntimeTimer(rt, { skipped: true });
+}
+
+function stopAllTimersForRecipe(recipeId) {
+  const ids = [];
+  for (const [timerId, rt] of timerStore.active.entries()) {
+    if (rt.recipeId === recipeId) ids.push(timerId);
+  }
+  ids.forEach(timerId => timerStore.active.delete(timerId));
+  if (ids.length) toast(`Stopped ${ids.length} timer${ids.length > 1 ? 's' : ''}.`);
+  saveTimersToStorage();
+  stopTimerTickerIfIdle();
+  renderTimerDock();
+  refreshActiveRecipeTimerUI();
+}
+
+function completeRuntimeTimer(runtime, options = {}) {
+  const { skipped = false, silent = false } = options;
+  timerStore.active.delete(runtime.timerId);
+
+  timerStore.completed.set(runtime.timerId, {
+    timerId: runtime.timerId,
+    recipeId: runtime.recipeId,
+    recipeTitle: runtime.recipeTitle,
+    stepIndex: runtime.stepIndex,
+    stepNumber: runtime.stepNumber,
+    timerIndex: runtime.timerIndex,
+    label: runtime.label,
+    status: skipped ? 'skipped' : 'done',
+    expiresAtMs: Date.now() + TIMER_COMPLETE_TTL_MS,
+    stepComplete: runtime.pendingQueue.length === 0,
+  });
+
+  if (!silent) {
+    if (!skipped) {
+      playTimerDoneBeep();
+      toast(`Timer done: ${runtime.label}`);
+    }
+    if (runtime.pendingQueue.length === 0) {
+      toast(`Step ${runtime.stepNumber} complete for ${runtime.recipeTitle}`);
+    }
+  }
+
+  if (runtime.pendingQueue.length > 0) {
+    const next = runtime.pendingQueue[0];
+    const rest = runtime.pendingQueue.slice(1);
+    startTimerDescriptor(next, rest, { fromChain: true });
+  }
+
+  saveTimersToStorage();
+  stopTimerTickerIfIdle();
+  renderTimerDock();
+  refreshActiveRecipeTimerUI();
+}
+
+function tickTimers(options = {}) {
+  const { silentRestored = false } = options;
+  const now = Date.now();
+  const toFinish = [];
+
+  for (const rt of timerStore.active.values()) {
+    if (rt.status === 'running' && rt.endsAtMs <= now) toFinish.push(rt);
+  }
+
+  for (const done of timerStore.completed.values()) {
+    if (done.expiresAtMs <= now) timerStore.completed.delete(done.timerId);
+  }
+
+  for (const rt of toFinish) {
+    completeRuntimeTimer(rt, { silent: silentRestored });
+  }
+
+  renderTimerDock();
+  refreshActiveRecipeTimerUI();
+  stopTimerTickerIfIdle();
+}
+
+function getRecipeTimers(recipeId) {
+  const list = [];
+  for (const rt of timerStore.active.values()) {
+    if (rt.recipeId === recipeId) list.push(rt);
+  }
+  list.sort((a, b) => a.stepIndex - b.stepIndex || a.timerIndex - b.timerIndex);
+  return list;
+}
+
+function getStepTimerRowId(recipeId, stepIndex) {
+  return `stepTimerRow-${recipeId}-${stepIndex}`;
+}
+
+function renderStepTimerRow(recipeData, stepIndex) {
+  const step = recipeData?.parsed?.steps?.[stepIndex];
+  if (!step) return '';
+
+  const rawTimersCount = Array.isArray(step.timers) ? step.timers.length : 0;
+  if (!rawTimersCount) return '';
+
+  const validDescriptors = buildStepTimersForRecipe(recipeData, stepIndex);
+  if (!validDescriptors.length) {
+    return '<div class="step-timer-meta step-timer-muted">No valid timer duration in this step.</div>';
+  }
+
+  const active = findStepActiveTimer(recipeData.id, stepIndex);
+  if (active) {
+    const remaining = formatClock(getRemainingSeconds(active));
+    const elapsed = formatClock(getElapsedSeconds(active));
+    const status = active.status === 'paused' ? 'Paused' : 'Running';
+    return `
+      <div class="step-timer-meta">
+        <span class="timer-chip ${active.status}">${status}</span>
+        <span class="timer-title">⏱ ${esc(active.label)}</span>
+        <span class="timer-clock">${remaining}</span>
+        <span class="timer-elapsed">elapsed ${elapsed}</span>
+      </div>
+      <div class="timer-controls">
+        ${active.status === 'running'
+          ? `<button type="button" class="step-timer-btn" onclick="pauseTimerById('${active.timerId}')">Pause</button>`
+          : `<button type="button" class="step-timer-btn" onclick="resumeTimerById('${active.timerId}')">Resume</button>`}
+        <button type="button" class="step-timer-btn" onclick="skipTimerById('${active.timerId}')">Skip</button>
+        <button type="button" class="step-timer-btn danger" onclick="stopTimerById('${active.timerId}')">Stop</button>
+      </div>`;
+  }
+
+  const completed = stepWasRecentlyCompleted(recipeData.id, stepIndex);
+  return `
+    <div class="step-timer-meta ${completed ? 'step-timer-complete' : ''}">
+      <span class="timer-chip ready">Ready</span>
+      <span>${completed ? 'Step timer completed. Start again if needed.' : `${validDescriptors.length} timer${validDescriptors.length > 1 ? 's' : ''} available`}</span>
+    </div>
+    <div class="timer-controls">
+      <button type="button" class="step-timer-btn" onclick="startStepTimer(${stepIndex})">Start Step Timer</button>
+    </div>`;
+}
+
+function renderRecipeTimerPanel() {
+  const el = document.getElementById('recipeTimerPanel');
+  if (!el || !activeData) return;
+
+  const timers = getRecipeTimers(activeData.id);
+  if (!timers.length) {
+    el.innerHTML = '<div class="recipe-timer-panel"><span>No active timers for this recipe.</span></div>';
+    return;
+  }
+
+  let html = '<div class="recipe-timer-panel">';
+  html += `<div class="recipe-timer-head"><strong>${timers.length}</strong> active timer${timers.length > 1 ? 's' : ''}</div>`;
+  html += '<div class="recipe-timer-list">';
+  for (const rt of timers) {
+    html += `<div class="recipe-timer-item">
+      <span class="timer-chip ${rt.status}">${rt.status === 'paused' ? 'Paused' : 'Running'}</span>
+      <span>Step ${rt.stepNumber}: ${esc(rt.label)}</span>
+      <strong>${formatClock(getRemainingSeconds(rt))}</strong>
+    </div>`;
+  }
+  html += '</div>';
+  html += `<div class="timer-controls"><button type="button" class="step-timer-btn danger" onclick="stopAllTimersForRecipe(${activeData.id})">Stop All For Recipe</button></div>`;
+  html += '</div>';
+  el.innerHTML = html;
+}
+
+function refreshActiveRecipeTimerUI() {
+  if (!activeData) return;
+  renderRecipeTimerPanel();
+
+  const steps = activeData?.parsed?.steps || [];
+  for (let i = 0; i < steps.length; i++) {
+    const row = document.getElementById(getStepTimerRowId(activeData.id, i));
+    if (row) row.innerHTML = renderStepTimerRow(activeData, i);
+
+    const stepEl = document.getElementById(`recipeStep-${activeData.id}-${i}`);
+    if (stepEl) {
+      stepEl.classList.toggle('active-timer-step', stepHasActiveTimer(activeData.id, i));
+      stepEl.classList.toggle('timer-step-complete', stepWasRecentlyCompleted(activeData.id, i));
+    }
+  }
+}
+
+function toggleTimerDock() {
+  timerDockCollapsed = !timerDockCollapsed;
+  renderTimerDock();
+}
+
+function openRecipeFromTimer(recipeId) {
+  if (!recipeExists(recipeId)) {
+    toast('Recipe no longer exists');
+    return;
+  }
+  viewRecipe(recipeId);
+}
+
+function renderTimerDock() {
+  const dock = document.getElementById('timerDock');
+  if (!dock) return;
+
+  const active = Array.from(timerStore.active.values()).sort((a, b) => {
+    if (a.status !== b.status) return a.status === 'running' ? -1 : 1;
+    return a.endsAtMs - b.endsAtMs;
+  });
+  const completed = Array.from(timerStore.completed.values()).sort((a, b) => b.expiresAtMs - a.expiresAtMs);
+
+  const hasEntries = active.length > 0 || completed.length > 0;
+  dock.classList.toggle('visible', hasEntries);
+  document.body.classList.toggle('timer-dock-visible', hasEntries);
+
+  if (!hasEntries) {
+    dock.innerHTML = '';
+    return;
+  }
+
+  let html = '<div class="timer-dock-bar">';
+  html += `<button type="button" class="timer-dock-toggle" onclick="toggleTimerDock()">${timerDockCollapsed ? '▲' : '▼'}</button>`;
+  html += `<div class="timer-dock-title">Timers <span class="timer-dock-count">${active.length}</span></div>`;
+  html += '</div>';
+
+  if (!timerDockCollapsed) {
+    html += '<div class="timer-dock-list">';
+
+    for (const rt of active) {
+      const remaining = formatClock(getRemainingSeconds(rt));
+      const elapsed = formatClock(getElapsedSeconds(rt));
+      const canOpen = recipeExists(rt.recipeId);
+      html += `
+      <div class="timer-dock-item ${rt.status === 'paused' ? 'paused' : 'running'}">
+        <div class="timer-dock-item-head">
+          <span class="timer-chip ${rt.status}">${rt.status === 'paused' ? 'Paused' : 'Running'}</span>
+          ${canOpen
+            ? `<button type="button" class="timer-link" onclick="openRecipeFromTimer(${rt.recipeId})">${esc(rt.recipeTitle)}</button>`
+            : `<span class="timer-link disabled">${esc(rt.recipeTitle)} (deleted)</span>`}
+          <span class="timer-step">Step ${rt.stepNumber}</span>
+        </div>
+        <div class="timer-dock-item-body">
+          <div class="timer-dock-label">${esc(rt.label)}</div>
+          <div class="timer-dock-clocks"><strong>${remaining}</strong><span>elapsed ${elapsed}</span></div>
+        </div>
+        <div class="timer-controls">
+          ${rt.status === 'running'
+            ? `<button type="button" class="step-timer-btn" onclick="pauseTimerById('${rt.timerId}')">Pause</button>`
+            : `<button type="button" class="step-timer-btn" onclick="resumeTimerById('${rt.timerId}')">Resume</button>`}
+          <button type="button" class="step-timer-btn" onclick="skipTimerById('${rt.timerId}')">Skip</button>
+          <button type="button" class="step-timer-btn danger" onclick="stopTimerById('${rt.timerId}')">Stop</button>
+        </div>
+      </div>`;
+    }
+
+    for (const done of completed) {
+      html += `
+      <div class="timer-dock-item done">
+        <div class="timer-dock-item-head">
+          <span class="timer-chip ready">${done.status === 'skipped' ? 'Skipped' : 'Done'}</span>
+          ${recipeExists(done.recipeId)
+            ? `<button type="button" class="timer-link" onclick="openRecipeFromTimer(${done.recipeId})">${esc(done.recipeTitle)}</button>`
+            : `<span class="timer-link disabled">${esc(done.recipeTitle)} (deleted)</span>`}
+          <span class="timer-step">Step ${done.stepNumber}</span>
+        </div>
+        <div class="timer-dock-item-body">
+          <div class="timer-dock-label">${esc(done.label)}</div>
+        </div>
+      </div>`;
+    }
+    html += '</div>';
+  }
+
+  dock.innerHTML = html;
+}
+
+function startStepTimer(stepIndex) {
+  if (!activeData) return;
+  startStepTimersForRecipe(activeData, stepIndex);
 }
 
 // ---- Render recipe list ----
@@ -245,89 +959,114 @@ function exportShoppingList(format) {
 }
 
 // ---- View recipe detail ----
-async function viewRecipe(id) {
+async function viewRecipe(id, options = {}) {
+  const { syncUrl = true, replaceUrl = false, closePanels = true } = options;
+  if (!recipeExists(id)) {
+    clearRecipeSelection({ syncUrl, replaceUrl: true });
+    return;
+  }
+
+  const token = ++recipeLoadToken;
   activeId = id;
+  persistRecipeSelection(id);
+
+  if (syncUrl) setRecipeIdInUrl(id, { replace: replaceUrl });
+
   renderRecipeList();
-  closeDrawers();
+  if (closePanels) closeDrawers();
 
   const main = document.getElementById('mainContent');
   main.innerHTML = '<div class="empty-state"><p style="font-style:italic;">Loading…</p></div>';
 
-  const data = await fetchRecipeDetail(id);
-  activeData = data;
-  const p = data.parsed;
+  try {
+    const data = await fetchRecipeDetail(id);
+    if (token !== recipeLoadToken) return;
 
-  let html = '<div class="recipe-detail">';
+    activeData = data;
+    const p = data.parsed;
+    let html = '<div class="recipe-detail">';
 
-  // Title row with actions
-  html += '<div class="recipe-title-row">';
-  html += `<h2>${esc(data.title)}</h2>`;
-  html += '<div class="recipe-actions">';
-  html += `<button class="action-btn" onclick="copyRecipe('text')" title="Copy as plain text">📋 Copy</button>`;
-  html += `<button class="action-btn" onclick="exportRecipe('cook')" title="Download .cook file">↓ .cook</button>`;
-  html += `<button class="action-btn" onclick="exportRecipe('md')" title="Download Markdown">↓ .md</button>`;
-  html += `<button class="action-btn" onclick="exportRecipe('txt')" title="Download plain text">↓ .txt</button>`;
-  if (adminMode) {
-    html += `<button class="action-btn" onclick="openEditRecipe(${data.id})" title="Edit recipe" style="color:var(--terracotta);">✎ Edit</button>`;
-  }
-  html += '</div></div>';
-
-  if (data.description) html += `<p class="description">${esc(data.description)}</p>`;
-
-  // Meta chips
-  const meta = p.metadata || {};
-  if (Object.keys(meta).length) {
-    html += '<div class="recipe-meta-bar">';
-    for (const [k, v] of Object.entries(meta)) {
-      html += `<span class="meta-chip"><strong>${esc(k)}:</strong> ${esc(formatMetaValue(v))}</span>`;
+    html += '<div class="recipe-title-row">';
+    html += `<h2>${esc(data.title)}</h2>`;
+    html += '<div class="recipe-actions">';
+    html += `<button class="action-btn" onclick="copyRecipe('text')" title="Copy as plain text">📋 Copy</button>`;
+    html += `<button class="action-btn" onclick="exportRecipe('cook')" title="Download .cook file">↓ .cook</button>`;
+    html += `<button class="action-btn" onclick="exportRecipe('md')" title="Download Markdown">↓ .md</button>`;
+    html += `<button class="action-btn" onclick="exportRecipe('txt')" title="Download plain text">↓ .txt</button>`;
+    if (adminMode) {
+      html += `<button class="action-btn" onclick="openEditRecipe(${data.id})" title="Edit recipe" style="color:var(--terracotta);">✎ Edit</button>`;
     }
-    html += '</div>';
-  }
+    html += '</div></div>';
 
-  if (p.notes && p.notes.length) {
-    html += '<div class="section-title">Notes</div>';
-    for (const note of p.notes) {
-      html += `<div class="step" style="margin-bottom:0.25rem;"><span class="step-num">›</span><div class="step-text"><em>${esc(note.text)}</em></div></div>`;
+    if (data.description) html += `<p class="description">${esc(data.description)}</p>`;
+
+    const meta = p.metadata || {};
+    if (Object.keys(meta).length) {
+      html += '<div class="recipe-meta-bar">';
+      for (const [k, v] of Object.entries(meta)) {
+        html += `<span class="meta-chip"><strong>${esc(k)}:</strong> ${esc(formatMetaValue(v))}</span>`;
+      }
+      html += '</div>';
     }
-  }
 
-  // Ingredients overview
-  if (p.ingredients.length) {
-    html += '<div class="section-title">Ingredients</div>';
-    html += '<div class="recipe-ingredients-grid">';
-    for (const ing of p.ingredients) {
-      const qty = [ing.quantity, ing.unit].filter(Boolean).join(' ');
-      html += `<div class="ingredient-pill">`;
-      if (qty) html += `<span class="qty">${esc(qty)}</span>`;
-      html += `<span>${esc(ing.name)}${ing.preparation ? ' <small style="color:var(--ink-muted);font-style:italic;">(' + esc(ing.preparation) + ')</small>' : ''}</span>`;
-      html += `</div>`;
+    if (p.notes && p.notes.length) {
+      html += '<div class="section-title">Notes</div>';
+      for (const note of p.notes) {
+        html += `<div class="step" style="margin-bottom:0.25rem;"><span class="step-num">›</span><div class="step-text"><em>${esc(note.text)}</em></div></div>`;
+      }
     }
-    html += '</div>';
-  }
 
-  // Steps
-  let currentSection = '';
-  let stepNum = 0;
-  html += '<div class="section-title">Method</div>';
-
-  for (const step of p.steps) {
-    if (step.section && step.section !== currentSection) {
-      currentSection = step.section;
-      html += `<div class="section-title" style="color:var(--sage);font-size:0.95rem;margin-top:1rem;">${esc(currentSection)}</div>`;
+    if (p.ingredients.length) {
+      html += '<div class="section-title">Ingredients</div>';
+      html += '<div class="recipe-ingredients-grid">';
+      for (const ing of p.ingredients) {
+        const qty = [ing.quantity, ing.unit].filter(Boolean).join(' ');
+        html += '<div class="ingredient-pill">';
+        if (qty) html += `<span class="qty">${esc(qty)}</span>`;
+        html += `<span>${esc(ing.name)}${ing.preparation ? ' <small style="color:var(--ink-muted);font-style:italic;">(' + esc(ing.preparation) + ')</small>' : ''}</span>`;
+        html += '</div>';
+      }
+      html += '</div>';
     }
-    stepNum++;
-    const highlighted = highlightStep(step);
-    html += `<div class="step"><span class="step-num">${stepNum}</span><div class="step-text">${highlighted}</div></div>`;
-  }
 
-  // Source toggle
-  html += `<button class="source-toggle" onclick="this.nextElementSibling.classList.toggle('visible')">
+    html += '<div class="section-title">Method</div>';
+    html += '<div id="recipeTimerPanel"></div>';
+
+    let currentSection = '';
+    let stepNum = 0;
+    for (const step of p.steps) {
+      if (step.section && step.section !== currentSection) {
+        currentSection = step.section;
+        html += `<div class="section-title" style="color:var(--sage);font-size:0.95rem;margin-top:1rem;">${esc(currentSection)}</div>`;
+      }
+
+      const stepIndex = stepNum;
+      stepNum++;
+      const stepClasses = ['step'];
+      if (stepHasActiveTimer(data.id, stepIndex)) stepClasses.push('active-timer-step');
+      if (stepWasRecentlyCompleted(data.id, stepIndex)) stepClasses.push('timer-step-complete');
+
+      const highlighted = highlightStep(step);
+      html += `<div class="${stepClasses.join(' ')}" id="recipeStep-${data.id}-${stepIndex}" data-step-index="${stepIndex}">`;
+      html += `<span class="step-num">${stepNum}</span><div class="step-text">${highlighted}`;
+      html += `<div class="step-timer-row" id="${getStepTimerRowId(data.id, stepIndex)}"></div>`;
+      html += '</div></div>';
+    }
+
+    html += `<button class="source-toggle" onclick="this.nextElementSibling.classList.toggle('visible')">
       &lt;/&gt; View Cooklang source
     </button>`;
-  html += `<pre class="source-block">${highlightSource(data.source)}</pre>`;
+    html += `<pre class="source-block">${highlightSource(data.source)}</pre>`;
+    html += '</div>';
+    main.innerHTML = html;
 
-  html += '</div>';
-  main.innerHTML = html;
+    refreshActiveRecipeTimerUI();
+    renderTimerDock();
+  } catch {
+    if (token !== recipeLoadToken) return;
+    toast('Could not load recipe');
+    clearRecipeSelection({ syncUrl: true, replaceUrl: true });
+  }
 }
 
 // Single-pass tokenizer: finds all @ingredients, #cookware, ~timers in one regex
@@ -461,7 +1200,7 @@ async function toggleAdmin() {
     setAdminModePreference(false);
     updateAdminButton();
     renderRecipeList();
-    if (activeId) viewRecipe(activeId);
+    if (activeId) viewRecipe(activeId, { replaceUrl: true });
     const existingBtn = document.getElementById('addRecipeBtn');
     if (existingBtn) existingBtn.remove();
     toast('Admin mode off');
@@ -489,7 +1228,7 @@ function activateAdmin() {
   setAdminModePreference(true);
   updateAdminButton();
   renderRecipeList();
-  if (activeId) viewRecipe(activeId);
+  if (activeId) viewRecipe(activeId, { replaceUrl: true });
   addNewRecipeButton();
   toast('Admin mode on — click ✎ Edit on recipes or add new ones');
 }
@@ -526,7 +1265,7 @@ async function adminLogout() {
   setAdminModePreference(false);
   updateAdminButton();
   renderRecipeList();
-  if (activeId) viewRecipe(activeId);
+  if (activeId) viewRecipe(activeId, { replaceUrl: true });
   const existingBtn = document.getElementById('addRecipeBtn');
   if (existingBtn) existingBtn.remove();
   toast('Logged out');
@@ -622,18 +1361,18 @@ async function deleteRecipe() {
   if (res.ok) {
     toast('Recipe deleted');
     closeAdmin();
-    activeId = null;
-    activeData = null;
-    selectedIds.delete(parseInt(id));
+    const deletedId = parseInt(id, 10);
+    selectedIds.delete(deletedId);
     await fetchRecipes();
     updateShoppingList();
     updateCartBadge();
-    document.getElementById('mainContent').innerHTML = `
-        <div class="empty-state">
-          <div class="icon">📖</div>
-          <h2>Choose a recipe</h2>
-          <p>Select a recipe from the sidebar to view it,<br>or check multiple to build a shopping list.</p>
-        </div>`;
+    if (activeId === deletedId) {
+      clearRecipeSelection({ syncUrl: true, replaceUrl: true });
+    } else {
+      renderRecipeList();
+    }
+    renderTimerDock();
+    refreshActiveRecipeTimerUI();
   } else if (res.status === 401) {
     toast('Session expired — please log in again');
     adminMode = false;
@@ -673,6 +1412,7 @@ function formatMetaValue(value) {
 
 async function initApp() {
   await fetchRecipes();
+  restoreTimersFromStorage();
   await checkAuth();
   if (getAdminModePreference()) {
     if (!authStatus.password_set || authStatus.logged_in) {
@@ -681,6 +1421,8 @@ async function initApp() {
       setAdminModePreference(false);
     }
   }
+  await syncSelectionFromUrl();
+  renderTimerDock();
 }
 
 initApp();

@@ -250,6 +250,10 @@ header h1 span {
   max-height: calc(100vh - 54px);
 }
 
+body.timer-dock-visible .main-content {
+  padding-bottom: 13rem;
+}
+
 .empty-state {
   display: flex;
   flex-direction: column;
@@ -387,6 +391,8 @@ header h1 span {
   gap: 0.85rem;
   margin-bottom: 0.65rem;
   padding: 0.5rem 0;
+  border-left: 3px solid transparent;
+  transition: border-color 0.15s, background 0.15s;
 }
 
 .step-num {
@@ -402,6 +408,134 @@ header h1 span {
   font-size: 0.95rem;
   line-height: 1.75;
   flex: 1;
+}
+
+.step.active-timer-step {
+  border-left-color: var(--gold);
+  background: #fff9e9;
+  padding-left: 0.6rem;
+}
+
+.step.timer-step-complete {
+  border-left-color: var(--sage);
+  background: var(--sage-bg);
+  padding-left: 0.6rem;
+}
+
+.recipe-timer-panel {
+  border: 1px solid var(--border);
+  background: var(--warm-white);
+  border-radius: 8px;
+  padding: 0.6rem 0.75rem;
+  margin: 0.35rem 0 1rem;
+}
+
+.recipe-timer-head {
+  font-size: 0.82rem;
+  color: var(--ink-light);
+  margin-bottom: 0.35rem;
+}
+
+.recipe-timer-list {
+  display: grid;
+  gap: 0.35rem;
+  margin-bottom: 0.45rem;
+}
+
+.recipe-timer-item {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  font-size: 0.8rem;
+}
+
+.step-timer-row {
+  margin-top: 0.45rem;
+  border-top: 1px dashed var(--border);
+  padding-top: 0.45rem;
+}
+
+.step-timer-meta {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  flex-wrap: wrap;
+  color: var(--ink-light);
+  font-size: 0.78rem;
+}
+
+.step-timer-meta.step-timer-muted {
+  color: var(--ink-muted);
+}
+
+.step-timer-meta.step-timer-complete {
+  color: var(--sage);
+}
+
+.timer-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  padding: 0.1rem 0.45rem;
+  font-size: 0.66rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.timer-chip.running {
+  color: #7f5c00;
+  background: #fff3cc;
+}
+
+.timer-chip.paused {
+  color: #7a8b6f;
+  background: #eef3ea;
+}
+
+.timer-chip.ready {
+  color: var(--sage);
+  background: var(--sage-bg);
+}
+
+.timer-clock {
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  color: var(--ink);
+}
+
+.timer-elapsed {
+  color: var(--ink-muted);
+  font-size: 0.75rem;
+}
+
+.timer-controls {
+  margin-top: 0.35rem;
+  display: flex;
+  gap: 0.35rem;
+  flex-wrap: wrap;
+}
+
+.step-timer-btn {
+  border: 1px solid var(--border);
+  background: var(--cream);
+  color: var(--ink-light);
+  border-radius: 6px;
+  font-size: 0.72rem;
+  padding: 0.2rem 0.5rem;
+  cursor: pointer;
+}
+
+.step-timer-btn:hover {
+  border-color: var(--ink-muted);
+  color: var(--ink);
+}
+
+.step-timer-btn.danger {
+  color: #a43f28;
+  border-color: #d9a596;
+  background: #fff2ee;
 }
 
 .step-text .ing-highlight {
@@ -820,6 +954,154 @@ textarea.form-input {
   }
 }
 
+/* ---- Global timer dock ---- */
+.timer-dock {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 90;
+  display: none;
+  pointer-events: none;
+}
+
+.timer-dock.visible {
+  display: block;
+}
+
+.timer-dock-bar,
+.timer-dock-list {
+  max-width: 980px;
+  margin: 0 auto;
+  pointer-events: all;
+}
+
+.timer-dock-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  background: var(--ink);
+  color: var(--cream);
+  border-radius: 8px 8px 0 0;
+  padding: 0.4rem 0.7rem;
+}
+
+.timer-dock-toggle {
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  background: transparent;
+  color: var(--cream);
+  border-radius: 6px;
+  padding: 0.15rem 0.4rem;
+  cursor: pointer;
+}
+
+.timer-dock-title {
+  font-size: 0.82rem;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.timer-dock-count {
+  background: var(--terracotta);
+  border-radius: 999px;
+  padding: 0.08rem 0.45rem;
+  font-size: 0.7rem;
+  font-weight: 700;
+}
+
+.timer-dock-list {
+  max-height: 34vh;
+  overflow-y: auto;
+  background: var(--warm-white);
+  border: 1px solid var(--border);
+  border-top: none;
+  border-radius: 0 0 8px 8px;
+  padding: 0.5rem;
+  box-shadow: 0 -6px 24px var(--shadow-md);
+}
+
+.timer-dock-item {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.45rem 0.55rem;
+  margin-bottom: 0.45rem;
+  background: var(--cream);
+}
+
+.timer-dock-item.running {
+  border-color: #e1cc8a;
+}
+
+.timer-dock-item.paused {
+  border-color: #b7c4af;
+}
+
+.timer-dock-item.done {
+  opacity: 0.78;
+}
+
+.timer-dock-item:last-child {
+  margin-bottom: 0;
+}
+
+.timer-dock-item-head {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-bottom: 0.25rem;
+  flex-wrap: wrap;
+}
+
+.timer-link {
+  border: none;
+  background: none;
+  color: var(--ink);
+  text-decoration: underline;
+  font-family: var(--font-body);
+  font-size: 0.78rem;
+  cursor: pointer;
+  padding: 0;
+}
+
+.timer-link.disabled {
+  color: var(--ink-muted);
+  text-decoration: none;
+}
+
+.timer-step {
+  font-size: 0.7rem;
+  color: var(--ink-muted);
+}
+
+.timer-dock-item-body {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.timer-dock-label {
+  font-size: 0.8rem;
+  color: var(--ink-light);
+}
+
+.timer-dock-clocks {
+  display: flex;
+  align-items: baseline;
+  gap: 0.4rem;
+}
+
+.timer-dock-clocks strong {
+  font-family: var(--font-mono);
+  font-size: 0.82rem;
+}
+
+.timer-dock-clocks span {
+  font-size: 0.72rem;
+  color: var(--ink-muted);
+}
+
 /* ---- Responsive ---- */
 @media (max-width: 1100px) {
   .app-layout {
@@ -844,6 +1126,11 @@ textarea.form-input {
 
   .cart-toggle-wrap {
     display: flex !important;
+  }
+
+  .timer-dock-bar,
+  .timer-dock-list {
+    max-width: calc(100vw - 14px);
   }
 }
 
@@ -874,6 +1161,15 @@ textarea.form-input {
 
   .main-content {
     padding: 1.1rem;
+  }
+
+  body.timer-dock-visible .main-content {
+    padding-bottom: 16rem;
+  }
+
+  .timer-dock-item-body {
+    flex-direction: column;
+    align-items: flex-start;
   }
 }
 
