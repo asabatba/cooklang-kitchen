@@ -158,26 +158,42 @@ function parseQuantityNumber(raw) {
   const value = String(raw || '').trim().replace(',', '.');
   if (!value) return null;
 
-  const mixed = value.match(/^(\d+)\s+(\d+)\/(\d+)$/);
-  if (mixed) {
-    const whole = Number(mixed[1]);
-    const num = Number(mixed[2]);
-    const den = Number(mixed[3]);
-    if (den === 0) return null;
-    return whole + (num / den);
+  function parseSingle(input) {
+    const cleaned = String(input || '').trim();
+    if (!cleaned) return null;
+
+    const mixed = cleaned.match(/^(\d+)\s+(\d+)\/(\d+)$/);
+    if (mixed) {
+      const whole = Number(mixed[1]);
+      const num = Number(mixed[2]);
+      const den = Number(mixed[3]);
+      if (den === 0) return null;
+      return whole + (num / den);
+    }
+
+    const frac = cleaned.match(/^(\d+)\/(\d+)$/);
+    if (frac) {
+      const num = Number(frac[1]);
+      const den = Number(frac[2]);
+      if (den === 0) return null;
+      return num / den;
+    }
+
+    const n = Number(cleaned);
+    if (!Number.isFinite(n)) return null;
+    return n;
   }
 
-  const frac = value.match(/^(\d+)\/(\d+)$/);
-  if (frac) {
-    const num = Number(frac[1]);
-    const den = Number(frac[2]);
-    if (den === 0) return null;
-    return num / den;
+  // Support ranges like "3-4", "15 - 18", "3–4", "3 a 4".
+  // We use the upper bound to avoid under-timing recipe steps.
+  const range = value.match(/^(.+?)\s*(?:-|–|—|\ba\b)\s*(.+)$/i);
+  if (range) {
+    const left = parseSingle(range[1]);
+    const right = parseSingle(range[2]);
+    if (left !== null && right !== null) return Math.max(left, right);
   }
 
-  const n = Number(value);
-  if (!Number.isFinite(n)) return null;
-  return n;
+  return parseSingle(value);
 }
 
 function parseTimerQuantityToSeconds(quantity, unit) {
