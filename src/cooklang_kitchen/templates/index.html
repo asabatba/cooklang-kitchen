@@ -101,93 +101,9 @@
 
     {% include '_timer_dock.html' %}
 
-    <div x-show="ui.adminModalOpen" x-cloak @click.self="closeAdmin()" class="fixed inset-0 z-50 grid place-items-center bg-stone-950/50 p-4 backdrop-blur-sm dark:bg-black/65">
-      <div class="w-full max-w-2xl rounded-2xl border border-amber-200/50 bg-white shadow-2xl dark:border-[#3a2e1c] dark:bg-[#1a1510]">
-        <div class="flex items-center justify-between border-b border-amber-100 p-4 dark:border-[#2e2416]">
-          <h2 class="font-serif text-lg font-semibold" x-text="adminForm.id ? 'Edit Recipe' : 'Add Recipe'"></h2>
-          <button type="button" @click="closeAdmin()" class="rounded-md border border-stone-200 bg-stone-50 px-2 py-0.5 text-stone-500 transition hover:bg-stone-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/60 dark:border-[#3a2e1c] dark:bg-[#261e12] dark:text-stone-400 dark:hover:bg-[#332516]">&times;</button>
-        </div>
-        <div class="space-y-3 p-4 text-sm">
-          <div class="grid gap-2 sm:grid-cols-2">
-            <label class="font-medium text-stone-600 dark:text-stone-300">Title <input x-model="adminForm.title" type="text" class="mt-1 w-full rounded-xl border border-amber-200/70 bg-stone-50 px-3 py-2 text-sm text-stone-800 shadow-sm placeholder:text-stone-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/60 dark:border-[#3a2e1c] dark:bg-[#120e09] dark:text-stone-100 dark:placeholder:text-stone-600"></label>
-            <label class="font-medium text-stone-600 dark:text-stone-300">Category <input x-model="adminForm.category" type="text" class="mt-1 w-full rounded-xl border border-amber-200/70 bg-stone-50 px-3 py-2 text-sm text-stone-800 shadow-sm placeholder:text-stone-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/60 dark:border-[#3a2e1c] dark:bg-[#120e09] dark:text-stone-100 dark:placeholder:text-stone-600"></label>
-          </div>
-          <label class="font-medium text-stone-600 dark:text-stone-300">Description <input x-model="adminForm.description" type="text" class="mt-1 w-full rounded-xl border border-amber-200/70 bg-stone-50 px-3 py-2 text-sm text-stone-800 shadow-sm placeholder:text-stone-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/60 dark:border-[#3a2e1c] dark:bg-[#120e09] dark:text-stone-100 dark:placeholder:text-stone-600"></label>
-          <label class="font-medium text-stone-600 dark:text-stone-300">Cooklang Source <textarea x-model="adminForm.source" rows="10" class="mt-1 w-full rounded-xl border border-amber-200/70 bg-stone-50 px-3 py-2 font-mono text-xs text-stone-800 shadow-sm placeholder:text-stone-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/60 dark:border-[#3a2e1c] dark:bg-[#120e09] dark:text-stone-100 dark:placeholder:text-stone-600"></textarea></label>
-        </div>
-        <div class="flex items-center justify-end gap-2 border-t border-amber-100 p-4 text-xs dark:border-[#2e2416]">
-          <button type="button" x-show="adminForm.id" @click="deleteRecipe()" class="mr-auto rounded-lg border border-red-300/70 bg-red-50 px-2.5 py-1.5 text-red-600 transition hover:bg-red-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500/60 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-400 dark:hover:bg-red-950/60">Delete</button>
-          <button type="button" @click="closeAdmin()" class="rounded-lg border border-stone-200 bg-stone-50 px-2.5 py-1.5 text-stone-600 shadow-sm transition hover:bg-stone-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/60 dark:border-[#3a2e1c] dark:bg-[#261e12] dark:text-stone-300 dark:hover:bg-[#332516]">Cancel</button>
-          <button type="button" @click="saveRecipe()" class="rounded-lg border border-amber-600 bg-amber-600 px-2.5 py-1.5 text-white shadow-sm transition hover:bg-amber-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/70" x-text="adminForm.id ? 'Update Recipe' : 'Save Recipe'"></button>
-        </div>
-      </div>
-    </div>
+    {% include '_modals.html' %}
 
-    <div x-show="ui.translationModalOpen" x-cloak @click.self="closeTranslationsAdmin()" class="fixed inset-0 z-50 grid place-items-center bg-stone-950/50 p-4 backdrop-blur-sm dark:bg-black/65">
-      <div class="w-full max-w-lg rounded-2xl border border-amber-200/50 bg-white shadow-2xl dark:border-[#3a2e1c] dark:bg-[#1a1510]">
-        <div class="flex items-center justify-between border-b border-amber-100 p-4 dark:border-[#2e2416]">
-          <h2 class="font-serif text-lg font-semibold">Update Translations</h2>
-          <button type="button" @click="closeTranslationsAdmin()" class="rounded-md border border-stone-200 bg-stone-50 px-2 py-0.5 text-stone-500 transition hover:bg-stone-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/60 dark:border-[#3a2e1c] dark:bg-[#261e12] dark:text-stone-400 dark:hover:bg-[#332516]">&times;</button>
-        </div>
-        <div class="space-y-3 p-4 text-sm">
-          <label class="font-medium text-stone-600 dark:text-stone-300">Target language
-            <select x-model="translationAdmin.language" @change="loadMissingTranslations()" class="mt-1 w-full rounded-xl border border-amber-200/70 bg-stone-50 px-3 py-2 text-sm text-stone-800 shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/60 dark:border-[#3a2e1c] dark:bg-[#120e09] dark:text-stone-100">
-              <template x-for="lang in nonEnglishTranslationLanguages" :key="lang.code">
-                <option :value="lang.code" x-text="lang.label"></option>
-              </template>
-            </select>
-          </label>
-          <div class="rounded-xl border border-amber-200/50 bg-amber-50/50 p-3 dark:border-[#3a2e1c] dark:bg-[#1e1810]">
-            <p class="text-xs font-medium uppercase tracking-[0.14em] text-stone-400 dark:text-stone-600">Missing terms</p>
-            <p class="mt-1 font-serif text-3xl font-semibold" x-text="translationAdmin.missing.total"></p>
-            <div class="mt-3 grid grid-cols-2 gap-2 text-xs">
-              <template x-for="[termType, count] in Object.entries(translationAdmin.missing.counts)" :key="termType">
-                <div class="rounded-lg border border-amber-100 bg-white px-2.5 py-2 dark:border-[#2e2416] dark:bg-[#120e09]">
-                  <p class="text-stone-400 dark:text-stone-600" x-text="translationAdmin.missing.labels[termType] || termType"></p>
-                  <p class="mt-0.5 font-semibold" x-text="count"></p>
-                </div>
-              </template>
-            </div>
-          </div>
-          <p x-show="translationAdmin.error" x-text="translationAdmin.error" class="text-xs text-red-600 dark:text-red-400"></p>
-          <template x-if="translationAdmin.lastResult">
-            <div class="rounded-xl border border-emerald-200/70 bg-emerald-50/70 p-3 text-xs text-emerald-800 dark:border-emerald-800/50 dark:bg-emerald-950/25 dark:text-emerald-300">
-              <p x-text="'Stored: ' + translationAdmin.lastResult.stored + ' across ' + translationAdmin.lastResult.batches + ' batch(es)'"></p>
-              <p x-text="'Fallback to English: ' + translationAdmin.lastResult.fallback_to_english"></p>
-            </div>
-          </template>
-        </div>
-        <div class="flex items-center justify-end gap-2 border-t border-amber-100 p-4 text-xs dark:border-[#2e2416]">
-          <button type="button" @click="closeTranslationsAdmin()" class="rounded-lg border border-stone-200 bg-stone-50 px-2.5 py-1.5 text-stone-600 shadow-sm transition hover:bg-stone-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/60 dark:border-[#3a2e1c] dark:bg-[#261e12] dark:text-stone-300 dark:hover:bg-[#332516]">Close</button>
-          <button type="button" @click="runTranslationUpdate()" :disabled="translationAdmin.loading || !translationAdmin.language" class="rounded-lg border border-emerald-600 bg-emerald-600 px-2.5 py-1.5 text-white shadow-sm transition hover:bg-emerald-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/70 disabled:cursor-not-allowed disabled:opacity-60">
-            <span x-text="translationAdmin.loading ? 'Updating…' : 'Fill Missing Translations'"></span>
-          </button>
-        </div>
-      </div>
-    </div>
-
-    <div x-show="ui.loginModalOpen" x-cloak @click.self="closeLogin()" class="fixed inset-0 z-50 grid place-items-center bg-stone-950/50 p-4 backdrop-blur-sm dark:bg-black/65">
-      <div class="w-full max-w-sm rounded-2xl border border-amber-200/50 bg-white shadow-2xl dark:border-[#3a2e1c] dark:bg-[#1a1510]">
-        <div class="flex items-center justify-between border-b border-amber-100 p-4 dark:border-[#2e2416]">
-          <h2 class="font-serif text-lg font-semibold">Admin Login</h2>
-          <button type="button" @click="closeLogin()" class="rounded-md border border-stone-200 bg-stone-50 px-2 py-0.5 text-stone-500 transition hover:bg-stone-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/60 dark:border-[#3a2e1c] dark:bg-[#261e12] dark:text-stone-400 dark:hover:bg-[#332516]">&times;</button>
-        </div>
-        <div class="space-y-2 p-4 text-sm">
-          <label class="font-medium text-stone-600 dark:text-stone-300">Password <input x-model="loginPassword" @keydown.enter.prevent="submitLogin()" type="password" class="mt-1 w-full rounded-xl border border-amber-200/70 bg-stone-50 px-3 py-2 text-sm text-stone-800 shadow-sm placeholder:text-stone-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/60 dark:border-[#3a2e1c] dark:bg-[#120e09] dark:text-stone-100 dark:placeholder:text-stone-600"></label>
-          <p x-show="loginError" x-text="loginError" class="text-xs text-red-600 dark:text-red-400"></p>
-        </div>
-        <div class="flex justify-end gap-2 border-t border-amber-100 p-4 text-xs dark:border-[#2e2416]">
-          <button type="button" @click="closeLogin()" class="rounded-lg border border-stone-200 bg-stone-50 px-2.5 py-1.5 text-stone-600 shadow-sm transition hover:bg-stone-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/60 dark:border-[#3a2e1c] dark:bg-[#261e12] dark:text-stone-300 dark:hover:bg-[#332516]">Cancel</button>
-          <button type="button" @click="submitLogin()" class="rounded-lg border border-amber-600 bg-amber-600 px-2.5 py-1.5 text-white shadow-sm transition hover:bg-amber-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/70">Log in</button>
-        </div>
-      </div>
-    </div>
-
-    <section class="pointer-events-none fixed inset-x-0 bottom-2 z-[60] flex flex-col items-center gap-2 px-4">
-      <template x-for="toast in ui.toastQueue" :key="toast.id">
-        <div class="pointer-events-auto rounded-xl border border-amber-200/50 bg-white/95 px-3.5 py-2 text-xs text-stone-700 shadow-lg shadow-amber-100/40 backdrop-blur dark:border-[#3a2e1c] dark:bg-[#1e1810]/95 dark:text-stone-300" x-text="toast.message"></div>
-      </template>
-    </section>
+    {% include '_toasts.html' %}
   </div>
 </body>
 </html>
