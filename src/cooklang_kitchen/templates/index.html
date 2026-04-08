@@ -96,36 +96,7 @@
 
       {% include '_main.html' %}
 
-      <aside :class="ui.cartOpen ? 'translate-x-0' : 'translate-x-full xl:translate-x-0'" class="fixed right-0 top-[58px] z-40 h-[calc(100vh-58px)] w-[340px] border-l border-amber-200/60 bg-white/85 shadow-xl shadow-amber-100/30 backdrop-blur-xl transition-transform duration-300 dark:border-[#2e2416] dark:bg-[#0f0b07]/90 dark:shadow-black/30 xl:sticky xl:translate-x-0">
-        <div class="sticky top-0 border-b border-amber-200/60 bg-white/95 p-3 backdrop-blur dark:border-[#2e2416] dark:bg-[#120e09]/95">
-          <div class="flex items-center gap-2">
-            <h2 class="text-[10px] font-semibold uppercase tracking-[0.22em] text-stone-400 dark:text-stone-500">Shopping List</h2>
-            <span x-show="selectedCount > 0" x-cloak class="rounded-md bg-emerald-600 px-1.5 py-0.5 text-[10px] font-medium text-white" x-text="selectedCount"></span>
-          </div>
-          <div x-show="hasShoppingData" x-cloak class="mt-2 flex gap-1.5 text-xs">
-            <button type="button" @click="copyShoppingList()" class="rounded-lg border border-stone-200 bg-stone-50 px-2.5 py-1.5 text-stone-600 shadow-sm transition hover:bg-stone-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/60 dark:border-[#3a2e1c] dark:bg-[#1e1810] dark:text-stone-300 dark:hover:bg-[#261e12]">Copy</button>
-            <button type="button" @click="exportShoppingList('txt')" class="rounded-lg border border-stone-200 bg-stone-50 px-2.5 py-1.5 text-stone-600 shadow-sm transition hover:bg-stone-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/60 dark:border-[#3a2e1c] dark:bg-[#1e1810] dark:text-stone-300 dark:hover:bg-[#261e12]">.txt</button>
-            <button type="button" @click="exportShoppingList('md')" class="rounded-lg border border-stone-200 bg-stone-50 px-2.5 py-1.5 text-stone-600 shadow-sm transition hover:bg-stone-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/60 dark:border-[#3a2e1c] dark:bg-[#1e1810] dark:text-stone-300 dark:hover:bg-[#261e12]">.md</button>
-          </div>
-        </div>
-        <div class="h-[calc(100%-86px)] overflow-y-auto">
-          <template x-if="shoppingLoading"><p class="p-3 text-sm text-stone-400 dark:text-stone-600">Loading…</p></template>
-          <template x-if="!shoppingLoading && !hasShoppingData"><p class="p-4 text-sm text-stone-400 dark:text-stone-600">Select recipes to generate a shopping list.</p></template>
-          <template x-if="hasShoppingData">
-            <div>
-              <div x-show="lastShoppingData.recipes && lastShoppingData.recipes.length" class="flex flex-wrap gap-1 border-b border-amber-100 p-2.5 text-[11px] dark:border-[#2e2416]">
-                <template x-for="title in lastShoppingData.recipes" :key="title"><span class="rounded-md border border-amber-200/60 bg-amber-50/60 px-2 py-0.5 text-stone-600 dark:border-[#3a2e1c] dark:bg-[#1e1810] dark:text-stone-400" x-text="title"></span></template>
-              </div>
-              <template x-for="(ing, idx) in lastShoppingData.ingredients" :key="idx">
-                <div class="flex items-baseline gap-2 border-b border-amber-100/60 px-3 py-2 text-sm dark:border-[#2a1e10]/60">
-                  <span class="w-16 shrink-0 text-right font-mono text-xs tabular-nums text-amber-600 dark:text-amber-500" x-text="[ing.quantity, ing.unit].filter(Boolean).join('\u00a0') || '—'"></span>
-                  <span class="font-medium" x-text="ing.name"></span>
-                </div>
-              </template>
-            </div>
-          </template>
-        </div>
-      </aside>
+      {% include '_shopping.html' %}
     </div>
 
     <section x-show="hasAnyTimers" x-cloak class="fixed inset-x-0 bottom-0 z-30 px-2">
