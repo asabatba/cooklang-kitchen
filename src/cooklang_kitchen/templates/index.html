@@ -87,35 +87,7 @@
 </head>
 <body class="min-h-screen bg-gradient-to-br from-stone-50 via-amber-50/40 to-orange-50/60 text-stone-900 antialiased dark:from-[#130f09] dark:via-[#1b1510] dark:to-[#110d08] dark:text-stone-100">
   <div x-data="kitchenApp()" x-init="init()" class="min-h-screen">
-    <header class="sticky top-0 z-40 border-b border-amber-200/60 bg-white/80 px-3 py-3 shadow-sm shadow-amber-100/50 backdrop-blur-lg dark:border-[#2e2416] dark:bg-[#0f0b07]/85 dark:shadow-none">
-      <div class="mx-auto flex max-w-[1600px] items-center gap-3">
-        <button type="button" @click="ui.sidebarOpen = !ui.sidebarOpen" class="rounded-lg border border-amber-200 bg-white px-2.5 py-1.5 text-sm shadow-sm transition hover:bg-amber-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/60 dark:border-[#3a2e1c] dark:bg-[#1e1810] dark:text-stone-300 dark:hover:bg-[#261e12] xl:hidden">☰</button>
-        <div class="flex items-baseline gap-2.5">
-          <h1 class="font-serif text-xl font-semibold leading-none tracking-tight">Cooklang <span class="text-amber-600 dark:text-amber-400">Kitchen</span></h1>
-          <span class="hidden text-[10px] font-medium uppercase tracking-[0.22em] text-stone-400 dark:text-stone-500 sm:inline">recipe viewer</span>
-        </div>
-        <div class="ml-auto flex gap-1.5 text-xs">
-          <label class="flex items-center gap-1.5 rounded-lg border border-amber-200 bg-white px-2 py-1.5 text-stone-600 shadow-sm dark:border-[#3a2e1c] dark:bg-[#1e1810] dark:text-stone-300">
-            <span class="hidden sm:inline text-stone-400 dark:text-stone-500">Lang</span>
-            <select x-model="ui.language" @change="changeLanguage($event.target.value)" class="bg-transparent text-xs text-stone-700 focus:outline-none dark:text-stone-200">
-              <template x-for="lang in translationLanguages" :key="lang.code">
-                <option :value="lang.code" x-text="lang.label"></option>
-              </template>
-            </select>
-          </label>
-          <button type="button" @click="toggleTheme()" class="rounded-lg border border-amber-200 bg-white px-2.5 py-1.5 text-stone-600 shadow-sm transition hover:bg-amber-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/60 dark:border-[#3a2e1c] dark:bg-[#1e1810] dark:text-stone-300 dark:hover:bg-[#261e12]">
-            <span x-text="ui.theme === 'dark' ? '☀ Light' : '◑ Dark'"></span>
-          </button>
-          <button type="button" @click="toggleAdmin()" class="rounded-lg border border-amber-200 bg-white px-2.5 py-1.5 text-stone-600 shadow-sm transition hover:bg-amber-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/60 dark:border-[#3a2e1c] dark:bg-[#1e1810] dark:text-stone-300 dark:hover:bg-[#261e12]" :class="adminMode ? 'border-amber-600 bg-amber-600 text-white hover:bg-amber-500 dark:border-amber-500 dark:bg-amber-600 dark:text-white' : ''">
-            <span x-text="adminMode ? 'Admin On' : 'Admin'"></span>
-          </button>
-          <button type="button" @click="ui.cartOpen = !ui.cartOpen" class="relative rounded-lg border border-amber-200 bg-white px-2.5 py-1.5 text-stone-600 shadow-sm transition hover:bg-amber-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/60 dark:border-[#3a2e1c] dark:bg-[#1e1810] dark:text-stone-300 dark:hover:bg-[#261e12] xl:hidden">
-            List
-            <span x-show="selectedCount > 0" x-cloak x-text="selectedCount" class="absolute -right-1.5 -top-1.5 rounded-full bg-amber-600 px-1 text-[10px] text-white dark:bg-amber-500 dark:text-zinc-900"></span>
-          </button>
-        </div>
-      </div>
-    </header>
+    {% include '_header.html' %}
 
     <div x-show="ui.sidebarOpen || ui.cartOpen" x-cloak @click="closeDrawers()" class="fixed inset-0 z-30 bg-stone-950/35 backdrop-blur-sm xl:hidden dark:bg-black/55"></div>
 
