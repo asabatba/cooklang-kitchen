@@ -99,43 +99,7 @@
       {% include '_shopping.html' %}
     </div>
 
-    <section x-show="hasAnyTimers" x-cloak class="fixed inset-x-0 bottom-0 z-30 px-2">
-      <div class="mx-auto max-w-5xl rounded-t-2xl border border-[#3a2e1c] bg-[#0f0b07]/96 p-3 text-stone-200 shadow-2xl backdrop-blur-xl">
-        <div class="mb-2 flex items-center gap-2 text-xs">
-          <button type="button" @click="ui.timerDockCollapsed = !ui.timerDockCollapsed" class="rounded-md border border-[#3a2e1c] bg-[#1e1810] px-2 py-0.5 text-stone-400 transition hover:bg-[#261e12] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/70" x-text="ui.timerDockCollapsed ? '▲' : '▼'"></button>
-          <span class="font-medium uppercase tracking-[0.14em] text-stone-400">Timers</span>
-          <span class="rounded-md bg-amber-600 px-1.5 py-0.5 font-semibold text-white" x-text="timers.active.length"></span>
-        </div>
-        <div x-show="!ui.timerDockCollapsed" class="max-h-64 space-y-1.5 overflow-y-auto">
-          <template x-for="rt in sortedActiveTimers" :key="rt.timerId">
-            <article class="rounded-xl border border-[#3a2e1c] bg-[#1a1510] p-2.5 text-xs">
-              <div class="mb-1 flex flex-wrap items-center gap-2">
-                <button type="button" x-show="recipeExists(rt.recipeId)" @click="loadActiveRecipe(rt.recipeId)" class="font-medium text-amber-400 underline decoration-amber-600/60 underline-offset-2 transition hover:text-amber-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/70" x-text="rt.recipeTitle"></button>
-                <span x-show="!recipeExists(rt.recipeId)" x-text="rt.recipeTitle + ' (deleted)'" class="text-stone-500"></span>
-                <span class="text-stone-500" x-text="'· Step ' + rt.stepNumber"></span>
-              </div>
-              <div class="mb-1.5 flex items-center justify-between">
-                <span class="text-stone-300" x-text="rt.label"></span>
-                <span class="font-mono tabular-nums text-amber-400" x-text="formatCountdownDisplay(getRemainingSeconds(rt))"></span>
-              </div>
-              <div class="flex flex-wrap gap-1.5">
-                <button type="button" x-show="rt.status !== 'paused'" @click="pauseTimerById(rt.timerId)" class="rounded-md border border-[#3a2e1c] bg-[#261e12] px-2 py-0.5 text-stone-300 transition hover:bg-[#332516] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/70">Pause</button>
-                <button type="button" x-show="rt.status === 'paused'" @click="resumeTimerById(rt.timerId)" class="rounded-md border border-[#3a2e1c] bg-[#261e12] px-2 py-0.5 text-stone-300 transition hover:bg-[#332516] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/70">Resume</button>
-                <button type="button" @click="skipTimerById(rt.timerId)" class="rounded-md border border-[#3a2e1c] bg-[#261e12] px-2 py-0.5 text-stone-300 transition hover:bg-[#332516] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/70">Skip</button>
-                <button type="button" @click="stopTimerById(rt.timerId)" class="rounded-md border border-red-900/60 bg-red-950/40 px-2 py-0.5 text-red-400 transition hover:bg-red-950/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500/70">Stop</button>
-              </div>
-            </article>
-          </template>
-          <template x-for="done in sortedCompletedTimers" :key="done.timerId + '-' + done.expiresAtMs">
-            <article class="rounded-xl border border-[#2e2416] bg-[#141008] p-2 text-xs opacity-80">
-              <span class="mr-2 rounded-md bg-emerald-700 px-1.5 py-0.5 font-medium text-emerald-100" x-text="done.status === 'skipped' ? 'Skipped' : 'Done'"></span>
-              <span class="text-stone-400" x-text="done.recipeTitle"></span>
-              <span class="text-stone-600" x-text="' · Step ' + done.stepNumber + ' · ' + done.label"></span>
-            </article>
-          </template>
-        </div>
-      </div>
-    </section>
+    {% include '_timer_dock.html' %}
 
     <div x-show="ui.adminModalOpen" x-cloak @click.self="closeAdmin()" class="fixed inset-0 z-50 grid place-items-center bg-stone-950/50 p-4 backdrop-blur-sm dark:bg-black/65">
       <div class="w-full max-w-2xl rounded-2xl border border-amber-200/50 bg-white shadow-2xl dark:border-[#3a2e1c] dark:bg-[#1a1510]">
