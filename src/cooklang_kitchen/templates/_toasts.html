@@ -1,0 +1,5 @@
+    <section class="pointer-events-none fixed inset-x-0 bottom-2 z-[60] flex flex-col items-center gap-2 px-4">
+      <template x-for="toast in ui.toastQueue" :key="toast.id">
+        <div class="pointer-events-auto rounded-xl border border-amber-200/50 bg-white/95 px-3.5 py-2 text-xs text-stone-700 shadow-lg shadow-amber-100/40 backdrop-blur dark:border-[#3a2e1c] dark:bg-[#1e1810]/95 dark:text-stone-300" x-text="toast.message"></div>
+      </template>
+    </section>
