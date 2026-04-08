@@ -22,6 +22,22 @@ def _env_bool(name: str, default: bool) -> bool:
     return value.strip().lower() in {"1", "true", "yes", "on"}
 
 
+def _env_list(name: str, default: list[str]) -> list[str]:
+    value = os.environ.get(name)
+    if value is None:
+        return list(default)
+
+    result: list[str] = []
+    seen: set[str] = set()
+    for item in value.split(","):
+        code = item.strip().lower()
+        if not code or code in seen:
+            continue
+        seen.add(code)
+        result.append(code)
+    return result or list(default)
+
+
 def _load_or_create_secret_key() -> str:
     env_key = os.environ.get("SECRET_KEY")
     if env_key:
@@ -54,6 +70,16 @@ class Config:
     DB_PATH = _data_file("DB_PATH", "recipes.db")
     PASSWORD_FILE = _data_file("PASSWORD_FILE", ".admin_password")
     SECRET_FILE = _data_file("SECRET_FILE", DEFAULT_SECRET_FILE)
+    GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "").strip()
+    GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash").strip() or "gemini-2.5-flash"
+    TRANSLATION_LANGUAGES = [
+        "en",
+        *[
+            code
+            for code in _env_list("TRANSLATION_LANGUAGES", ["en"])
+            if code != "en"
+        ],
+    ]
 
     SESSION_COOKIE_NAME = os.environ.get("SESSION_COOKIE_NAME", "cooklang_session")
     SESSION_COOKIE_HTTPONLY = True

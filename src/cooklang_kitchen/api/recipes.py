@@ -2,6 +2,12 @@ from flask import Blueprint, jsonify, request
 
 from ..db import get_db_connection
 from ..parser import combine_ingredients, extract_recipe_fields, parse
+from ..translations import (
+    TranslationError,
+    localize_combined_ingredients,
+    localize_parsed_recipe,
+    normalize_language_code,
+)
 
 bp = Blueprint("recipes_api", __name__, url_prefix="/api")
 
@@ -28,6 +34,11 @@ def list_recipes():
 
 @bp.get("/recipes/<int:recipe_id>")
 def get_recipe(recipe_id: int):
+    try:
+        language = normalize_language_code(request.args.get("lang", "en"))
+    except TranslationError as exc:
+        return jsonify({"error": str(exc)}), 400
+
     conn = get_db_connection()
     row = conn.execute(
         "SELECT id, title, description, category, source FROM recipes WHERE id = ?",
@@ -44,7 +55,8 @@ def get_recipe(recipe_id: int):
         recipe_data["title"] = parsed_fields.get("title") or "Untitled recipe"
     if not (recipe_data.get("description") or "").strip():
         recipe_data["description"] = parsed_fields.get("description") or ""
-    recipe_data["parsed"] = parse(recipe_data["source"]).to_dict()
+    recipe_data["parsed"] = localize_parsed_recipe(parse(recipe_data["source"]).to_dict(), language)
+    recipe_data["language"] = language
     return jsonify(recipe_data)
 
 
@@ -52,6 +64,10 @@ def get_recipe(recipe_id: int):
 def combine():
     data = request.get_json(silent=True) or {}
     recipe_ids = data.get("ids", [])
+    try:
+        language = normalize_language_code(data.get("language", "en"))
+    except TranslationError as exc:
+        return jsonify({"error": str(exc)}), 400
 
     if not recipe_ids:
         return jsonify({"ingredients": []})
@@ -71,5 +87,5 @@ def combine():
         all_ingredients.append([i.to_dict() for i in parsed.ingredients])
         recipe_titles.append(row["title"])
 
-    combined = combine_ingredients(all_ingredients)
-    return jsonify({"ingredients": combined, "recipes": recipe_titles})
+    combined = localize_combined_ingredients(combine_ingredients(all_ingredients), language)
+    return jsonify({"ingredients": combined, "recipes": recipe_titles, "language": language})

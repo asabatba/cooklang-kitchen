@@ -1,0 +1,727 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>The Morning Ledger</title>
+    <link
+        href="https://fonts.googleapis.com/css2?family=UnifrakturMaguntia&family=Playfair+Display:ital,wght@0,400;0,700;0,900;1,400;1,700&family=IM+Fell+English:ital@0;1&family=Source+Serif+4:ital,opsz,wght@0,8..60,300;0,8..60,400;1,8..60,300;1,8..60,400&display=swap"
+        rel="stylesheet" />
+    <style>
+        :root {
+            --ink: #1a1208;
+            --paper: #f5f0e8;
+            --paper-dark: #ede6d6;
+            --rule: #2a1f0e;
+            --accent: #8b1a1a;
+            --col-gap: 18px;
+        }
+
+        *,
+        *::before,
+        *::after {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            background: #c8b89a;
+            font-family: 'Source Serif 4', Georgia, serif;
+            color: var(--ink);
+            min-height: 100vh;
+            padding: 24px 12px;
+        }
+
+        .page {
+            background: var(--paper);
+            max-width: 960px;
+            margin: 0 auto;
+            padding: 0;
+            box-shadow: 3px 3px 0 #a0906e, 6px 6px 0 #8a7a5e, 9px 9px 16px rgba(0, 0, 0, 0.35);
+            position: relative;
+        }
+
+        /* Aged paper texture overlay */
+        .page::before {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background-image:
+                url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='300' height='300'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='300' height='300' filter='url(%23n)' opacity='0.04'/%3E%3C/svg%3E");
+            pointer-events: none;
+            z-index: 1;
+            border-radius: 0;
+        }
+
+        /* ── HEADER ── */
+        .masthead {
+            padding: 18px 28px 0;
+            border-bottom: 4px double var(--rule);
+            position: relative;
+        }
+
+        .masthead-top {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-family: 'IM Fell English', serif;
+            font-size: 9.5px;
+            letter-spacing: 0.08em;
+            color: #4a3822;
+            padding-bottom: 6px;
+            border-bottom: 1px solid var(--rule);
+            margin-bottom: 6px;
+        }
+
+        .masthead-motto {
+            font-style: italic;
+            color: var(--accent);
+        }
+
+        .nameplate {
+            text-align: center;
+            padding: 6px 0 10px;
+        }
+
+        .nameplate h1 {
+            font-family: 'UnifrakturMaguntia', cursive;
+            font-size: clamp(42px, 8vw, 80px);
+            font-weight: 400;
+            letter-spacing: 0.02em;
+            line-height: 1;
+            color: var(--ink);
+        }
+
+        .nameplate-rule {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin: 6px 0 4px;
+        }
+
+        .nameplate-rule span {
+            flex: 1;
+            height: 1px;
+            background: var(--rule);
+        }
+
+        .nameplate-rule em {
+            font-family: 'IM Fell English', serif;
+            font-size: 10px;
+            font-style: italic;
+            letter-spacing: 0.12em;
+            white-space: nowrap;
+            color: #5a4020;
+        }
+
+        .edition-bar {
+            display: flex;
+            justify-content: space-between;
+            font-family: 'IM Fell English', serif;
+            font-size: 9px;
+            letter-spacing: 0.1em;
+            text-transform: uppercase;
+            padding: 4px 0 10px;
+            border-bottom: 3px solid var(--rule);
+        }
+
+        /* ── SECTION LABEL ── */
+        .section-label {
+            font-family: 'IM Fell English', serif;
+            font-size: 9px;
+            letter-spacing: 0.2em;
+            text-transform: uppercase;
+            text-align: center;
+            padding: 3px 0;
+            border-bottom: 1px solid var(--rule);
+            color: #4a3822;
+            background: var(--paper-dark);
+        }
+
+        /* ── MAIN CONTENT ── */
+        .content {
+            padding: 0 20px;
+            position: relative;
+            z-index: 2;
+        }
+
+        /* ── GRID LAYOUTS ── */
+        .grid-3 {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            gap: 0;
+            border-bottom: 2px solid var(--rule);
+        }
+
+        .grid-3-2 {
+            display: grid;
+            grid-template-columns: 2fr 1fr;
+            gap: 0;
+            border-bottom: 2px solid var(--rule);
+        }
+
+        .grid-2-1 {
+            display: grid;
+            grid-template-columns: 1fr 2fr 1fr;
+            gap: 0;
+            border-bottom: 2px solid var(--rule);
+        }
+
+        .grid-4 {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 0;
+            border-bottom: 2px solid var(--rule);
+        }
+
+        /* ── ARTICLES ── */
+        .article {
+            padding: 12px var(--col-gap);
+            position: relative;
+        }
+
+        /* Column dividers */
+        .article+.article::before {
+            content: '';
+            position: absolute;
+            left: 0;
+            top: 12px;
+            bottom: 12px;
+            width: 1px;
+            background: var(--rule);
+        }
+
+        .article.lead {
+            padding: 16px var(--col-gap);
+        }
+
+        /* Headline styles */
+        .kicker {
+            font-family: 'IM Fell English', serif;
+            font-size: 9px;
+            letter-spacing: 0.2em;
+            text-transform: uppercase;
+            color: var(--accent);
+            display: block;
+            margin-bottom: 4px;
+        }
+
+        h2 {
+            font-family: 'Playfair Display', Georgia, serif;
+            font-weight: 900;
+            line-height: 1.1;
+            margin-bottom: 6px;
+            color: var(--ink);
+        }
+
+        h3 {
+            font-family: 'Playfair Display', Georgia, serif;
+            font-weight: 700;
+            line-height: 1.15;
+            margin-bottom: 5px;
+        }
+
+        h4 {
+            font-family: 'Playfair Display', Georgia, serif;
+            font-weight: 700;
+            font-style: italic;
+            line-height: 1.2;
+            margin-bottom: 4px;
+            font-size: 14px;
+        }
+
+        .hl-xl {
+            font-size: clamp(22px, 3.5vw, 36px);
+        }
+
+        .hl-lg {
+            font-size: clamp(18px, 2.5vw, 26px);
+        }
+
+        .hl-md {
+            font-size: clamp(15px, 2vw, 20px);
+        }
+
+        .hl-sm {
+            font-size: 15px;
+        }
+
+        .byline {
+            font-family: 'IM Fell English', serif;
+            font-size: 9.5px;
+            letter-spacing: 0.08em;
+            color: #6a5030;
+            margin-bottom: 6px;
+        }
+
+        .byline strong {
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+        }
+
+        p {
+            font-size: 13px;
+            line-height: 1.62;
+            text-align: justify;
+            hyphens: auto;
+            margin-bottom: 6px;
+        }
+
+        p+p {
+            text-indent: 1em;
+            margin-bottom: 0;
+        }
+
+        /* Drop cap */
+        .dropcap::first-letter {
+            font-family: 'Playfair Display', serif;
+            font-size: 4.2em;
+            font-weight: 900;
+            float: left;
+            line-height: 0.78;
+            margin: 4px 5px 0 0;
+            color: var(--ink);
+        }
+
+        /* ── IMAGE PLACEHOLDER ── */
+        .photo-block {
+            background: var(--paper-dark);
+            border: 1px solid #b0a080;
+            margin: 8px 0;
+            overflow: hidden;
+            position: relative;
+        }
+
+        .photo-block svg {
+            display: block;
+            width: 100%;
+        }
+
+        .photo-caption {
+            font-family: 'IM Fell English', serif;
+            font-size: 9px;
+            font-style: italic;
+            color: #6a5030;
+            padding: 3px 5px 4px;
+            border-top: 1px solid #c0b080;
+            background: var(--paper-dark);
+        }
+
+        /* ── PULL QUOTE ── */
+        .pull-quote {
+            border-top: 3px solid var(--rule);
+            border-bottom: 3px solid var(--rule);
+            margin: 10px 0;
+            padding: 8px 4px;
+            text-align: center;
+        }
+
+        .pull-quote p {
+            font-family: 'Playfair Display', serif;
+            font-size: 14px;
+            font-style: italic;
+            font-weight: 700;
+            line-height: 1.4;
+            text-align: center;
+            text-indent: 0;
+            margin: 0;
+        }
+
+        /* ── AD BOX ── */
+        .ad-box {
+            border: 2px solid var(--rule);
+            text-align: center;
+            padding: 12px 8px;
+            margin: 10px 0;
+            background: var(--paper-dark);
+        }
+
+        .ad-box .ad-title {
+            font-family: 'Playfair Display', serif;
+            font-size: 16px;
+            font-weight: 900;
+            letter-spacing: 0.04em;
+            line-height: 1.1;
+        }
+
+        .ad-box .ad-sub {
+            font-family: 'IM Fell English', serif;
+            font-size: 10px;
+            font-style: italic;
+            margin-top: 4px;
+            color: var(--accent);
+            letter-spacing: 0.1em;
+        }
+
+        .ad-box .ad-body {
+            font-size: 10px;
+            margin-top: 6px;
+            line-height: 1.5;
+            text-align: center;
+        }
+
+        .ad-divider {
+            border: none;
+            border-top: 1px solid var(--rule);
+            margin: 6px auto;
+            width: 60%;
+        }
+
+        /* ── INDEX BOX ── */
+        .index-box {
+            border: 1px solid var(--rule);
+            padding: 8px 10px;
+            font-family: 'IM Fell English', serif;
+            font-size: 10px;
+        }
+
+        .index-box .index-title {
+            font-weight: bold;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            font-size: 9px;
+            border-bottom: 1px solid var(--rule);
+            padding-bottom: 3px;
+            margin-bottom: 5px;
+        }
+
+        .index-box ul {
+            list-style: none;
+        }
+
+        .index-box li {
+            display: flex;
+            justify-content: space-between;
+            border-bottom: 1px dotted #b0a070;
+            padding: 2px 0;
+            font-size: 9.5px;
+        }
+
+        /* ── WEATHER BOX ── */
+        .weather-box {
+            border: 1px solid var(--rule);
+            padding: 6px 8px;
+            margin-bottom: 8px;
+            font-family: 'IM Fell English', serif;
+            font-size: 10px;
+            background: var(--paper-dark);
+        }
+
+        .weather-box .weather-title {
+            font-weight: bold;
+            text-transform: uppercase;
+            letter-spacing: 0.15em;
+            font-size: 8px;
+            border-bottom: 1px solid var(--rule);
+            margin-bottom: 5px;
+            padding-bottom: 2px;
+        }
+
+        .weather-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 9.5px;
+            margin-bottom: 2px;
+        }
+
+        /* ── RULE ORNAMENTS ── */
+        .ornament {
+            text-align: center;
+            font-size: 11px;
+            color: var(--accent);
+            letter-spacing: 0.3em;
+            margin: 4px 0;
+        }
+
+        .thick-rule {
+            border: none;
+            border-top: 3px solid var(--rule);
+            margin: 0;
+        }
+
+        .thin-rule {
+            border: none;
+            border-top: 1px solid var(--rule);
+            margin: 0;
+        }
+
+        .double-rule {
+            border: none;
+            border-top: 4px double var(--rule);
+            margin: 0;
+        }
+
+        /* ── FOOTER ── */
+        .footer {
+            border-top: 4px double var(--rule);
+            padding: 8px 20px;
+            display: flex;
+            justify-content: space-between;
+            font-family: 'IM Fell English', serif;
+            font-size: 9px;
+            color: #6a5030;
+            letter-spacing: 0.06em;
+        }
+
+        /* ── PRINT ── */
+        @media print {
+            body {
+                background: white;
+                padding: 0;
+            }
+
+            .page {
+                box-shadow: none;
+                max-width: 100%;
+            }
+
+            @page {
+                margin: 1.2cm;
+                size: A3 portrait;
+            }
+        }
+
+        @media (max-width: 640px) {
+
+            .grid-3,
+            .grid-3-2,
+            .grid-2-1,
+            .grid-4 {
+                grid-template-columns: 1fr;
+            }
+
+            .article+.article::before {
+                display: none;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <div class="page">
+
+        <!-- MASTHEAD -->
+        <header class="masthead">
+            <div class="masthead-top">
+                <span>Est. 1842 &nbsp;·&nbsp; Vol. CLXXXII, No. 47</span>
+                <span class="masthead-motto">"All the news that's fit to print — and then some."</span>
+                <span>Wednesday, March 4, 2026 &nbsp;·&nbsp; Price: 15 Cents</span>
+            </div>
+            <div class="nameplate">
+                <h1>The Morning Ledger</h1>
+                <div class="nameplate-rule">
+                    <span></span>
+                    <em>Founded in the spirit of truth &amp; public discourse</em>
+                    <span></span>
+                </div>
+            </div>
+            <div class="edition-bar">
+                <span>&#9670; City &amp; Region Edition &#9670;</span>
+                <span>Late Morning Final</span>
+                <span>&#9670; Weather: Partly Cloudy, 54°F &#9670;</span>
+            </div>
+        </header>
+
+        <!-- SECTION LABEL -->
+        <div class="section-label">&#10022; Front Page &#10022;</div>
+
+        <!-- ROW 1: Three columns -->
+        <div class="content">
+            <div class="grid-2-1">
+
+                <!-- COL 1 – NARROW LEFT -->
+                <div class="article">
+                    <span class="kicker">Markets</span>
+                    <h3 class="hl-md">Exchange Closes at Record Highs for Third Consecutive Session</h3>
+                    <div class="byline">By <strong>Cornelia Hastings</strong> · Financial Correspondent</div>
+                    <p class="dropcap">Trading floors erupted into cautious applause yesterday afternoon as the bell
+                        rang on what analysts are calling the most consequential three-session streak in nearly a
+                        decade. Volume reached unprecedented levels as institutional investors repositioned ahead of the
+                        central bank's anticipated rate decision.</p>
+                    <p>The surge was driven chiefly by technology and maritime shipping equities, sectors long
+                        considered bellwethers of broader economic confidence.</p>
+                    <div class="pull-quote">
+                        <p>"We have not seen appetite of this kind since the great expansion of the previous century."
+                        </p>
+                    </div>
+                    <p>Observers cautioned against premature celebration, noting that commodity prices remain volatile
+                        and that overseas partners have yet to signal reciprocal confidence.</p>
+
+                    <hr class="thin-rule" style="margin:10px 0" />
+
+                    <div class="weather-box">
+                        <div class="weather-title">&#9729; Local Forecast</div>
+                        <div class="weather-row"><span>Today</span><span>Partly Cloudy · 54°F</span></div>
+                        <div class="weather-row"><span>Thursday</span><span>Rain likely · 48°F</span></div>
+                        <div class="weather-row"><span>Friday</span><span>Clearing · 57°F</span></div>
+                        <div class="weather-row"><span>Humidity</span><span>63%</span></div>
+                    </div>
+                </div>
+
+                <!-- COL 2 – WIDE CENTER (LEAD) -->
+                <div class="article lead"
+                    style="border-left: 3px double var(--rule); border-right: 3px double var(--rule);">
+                    <span class="kicker">&#9670; Breaking &#9670;</span>
+                    <h2 class="hl-xl" style="text-align:center;">Grand Council Reaches Historic Accord on River
+                        Authority Boundaries</h2>
+                    <div class="byline" style="text-align:center;">By <strong>Edmund Fairweather</strong> · Senior
+                        Political Correspondent &nbsp;|&nbsp; <strong>Agnes Whitmore</strong> · Contributing Editor
+                    </div>
+
+                    <!-- PHOTO PLACEHOLDER -->
+                    <div class="photo-block">
+                        <svg viewBox="0 0 520 200" xmlns="http://www.w3.org/2000/svg">
+                            <rect width="520" height="200" fill="#ddd5c0" />
+                            <rect x="60" y="30" width="400" height="140" rx="2" fill="#c8bda8" stroke="#a0906e"
+                                stroke-width="1" />
+                            <!-- Simple skyline silhouette -->
+                            <rect x="80" y="110" width="30" height="60" fill="#a09070" />
+                            <rect x="90" y="95" width="10" height="15" fill="#a09070" />
+                            <rect x="120" y="100" width="45" height="70" fill="#b0a080" />
+                            <rect x="135" y="82" width="15" height="18" fill="#b0a080" />
+                            <rect x="175" y="90" width="60" height="80" fill="#a09070" />
+                            <rect x="195" y="72" width="20" height="18" fill="#a09070" />
+                            <rect x="245" y="105" width="35" height="65" fill="#b0a080" />
+                            <rect x="290" y="88" width="50" height="82" fill="#a09070" />
+                            <rect x="308" y="70" width="14" height="18" fill="#a09070" />
+                            <rect x="350" y="100" width="40" height="70" fill="#b0a080" />
+                            <rect x="400" y="115" width="28" height="55" fill="#a09070" />
+                            <!-- River -->
+                            <ellipse cx="260" cy="185" rx="200" ry="18" fill="#c0d0b8" opacity="0.6" />
+                            <!-- Figures -->
+                            <circle cx="200" cy="108" r="5" fill="#705840" />
+                            <rect x="197" y="113" width="6" height="12" fill="#705840" />
+                            <circle cx="320" cy="106" r="5" fill="#705840" />
+                            <rect x="317" y="111" width="6" height="12" fill="#705840" />
+                            <text x="260" y="60" text-anchor="middle" font-family="Georgia, serif" font-size="11"
+                                fill="#6a5030" font-style="italic">— Council Hall, River District —</text>
+                        </svg>
+                        <div class="photo-caption">Delegates convened at the historic Council Hall overlooking the
+                            Merton River as final terms were agreed upon. — Daguerreotype by H. Crowley</div>
+                    </div>
+
+                    <p class="dropcap">After fourteen months of fractious deliberation and three dramatic walkouts,
+                        representatives from the six river districts gathered yesterday at the Council Hall to sign what
+                        has been hailed as the most significant territorial compact in a generation. The agreement,
+                        tentatively titled the Merton River Compact, delineates jurisdictional boundaries along the
+                        contested northern reaches of the river, settling disputes that had long paralysed agricultural
+                        planning and commerce.</p>
+                    <p>The signing ceremony, attended by several hundred invited guests and a considerable throng of
+                        curious onlookers gathered on the riverside promenade, concluded just before the supper hour.
+                        Fireworks were reportedly heard from the eastern wards, though municipal authorities declined to
+                        confirm whether such celebrations were officially sanctioned.</p>
+                    <p>Chief Delegate Harrington, visibly exhausted but in evident good spirits, declared the accord a
+                        triumph of reasoned compromise. "We did not get everything we wished," he told reporters, "but
+                        we have built something that will outlast the passions of this moment."</p>
+                </div>
+
+                <!-- COL 3 – NARROW RIGHT -->
+                <div class="article">
+                    <div class="index-box">
+                        <div class="index-title">&#9658; Inside Today</div>
+                        <ul>
+                            <li><span>Arts &amp; Culture</span><span>Pg. 4</span></li>
+                            <li><span>Commerce</span><span>Pg. 5</span></li>
+                            <li><span>Letters</span><span>Pg. 6</span></li>
+                            <li><span>Notices</span><span>Pg. 7</span></li>
+                            <li><span>Shipping</span><span>Pg. 8</span></li>
+                            <li><span>Obituaries</span><span>Pg. 9</span></li>
+                            <li><span>Amusements</span><span>Pg. 10</span></li>
+                        </ul>
+                    </div>
+
+                    <hr class="thin-rule" style="margin:10px 0" />
+
+                    <span class="kicker">Society</span>
+                    <h4>Lady Ashworth Opens New Lending Library on Coppergate Street</h4>
+                    <div class="byline">By <strong>Millicent Forde</strong></div>
+                    <p>The city's newest lending library opened its doors to modest but warm reception on Tuesday, the
+                        benefaction of Lady Constance Ashworth, who reportedly donated both the premises and its
+                        founding collection of four thousand volumes.</p>
+
+                    <hr class="thin-rule" style="margin:10px 0" />
+
+                    <div class="ad-box">
+                        <div class="ad-title">THORNTON &amp; SONS</div>
+                        <hr class="ad-divider" />
+                        <div class="ad-sub">Purveyors of Fine Instruments &amp; Optical Goods</div>
+                        <div class="ad-body">
+                            Telescopes · Chronometers · Surveying Equipment<br />
+                            <em>"Precision is our only promise."</em><br />
+                            <strong>14 Aldgate Row, Est. 1878</strong>
+                        </div>
+                    </div>
+                </div>
+
+            </div><!-- /grid-2-1 -->
+
+            <hr class="double-rule" />
+
+            <!-- ROW 2: Four columns -->
+            <div class="grid-4">
+
+                <div class="article">
+                    <span class="kicker">Foreign Affairs</span>
+                    <h3 class="hl-sm">Envoy Departs for Eastern Capitals Amid Trade Dispute</h3>
+                    <div class="byline">By <strong>R. Blackwell</strong></div>
+                    <p>A senior envoy departed by overnight express yesterday, bound for three eastern capitals in what
+                        officials described as a routine diplomatic rotation, though the timing — coinciding with the
+                        imposition of new tariff schedules — struck observers as far from coincidental.</p>
+                </div>
+
+                <div class="article">
+                    <span class="kicker">Science &amp; Progress</span>
+                    <h3 class="hl-sm">New Pneumatic Post System to Connect All Seven Districts by Autumn</h3>
+                    <div class="byline">By <strong>Prof. H. Lumley</strong></div>
+                    <p>Municipal engineers unveiled an ambitious scheme to extend the existing pneumatic dispatch tubes
+                        to all seven city districts before the autumn postal season. Preliminary excavation is expected
+                        to begin at the juncture of Broad Street and the canal embankment within the fortnight.</p>
+                    <div class="ornament">— ✦ —</div>
+                </div>
+
+                <div class="article">
+                    <span class="kicker">Local</span>
+                    <h3 class="hl-sm">Harbour Commission Votes to Expand Northern Berths</h3>
+                    <div class="byline">By <strong>G. Prentiss</strong></div>
+                    <p>The Harbour Commission voted six to two in favour of expanding the northern berth capacity, a
+                        measure that shipping merchants have lobbied for since the record-breaking cargo season of three
+                        years past. Costs are projected to run considerably above initial estimates.</p>
+                </div>
+
+                <div class="article">
+                    <div class="ad-box" style="margin-bottom:10px;">
+                        <div class="ad-title" style="font-size:13px;">THE VELDT HOTEL</div>
+                        <hr class="ad-divider" />
+                        <div class="ad-sub">Superior Lodgings &amp; Table d'Hôte</div>
+                        <div class="ad-body">
+                            Forty-two rooms · Private baths<br />
+                            Reading room &amp; telegraph office<br />
+                            <strong>Riverside Promenade, No. 2</strong>
+                        </div>
+                    </div>
+                    <span class="kicker">Notices</span>
+                    <p style="font-size:11px; font-family:'IM Fell English', serif; line-height:1.5;">
+                        <strong>LOST</strong> — On Tuesday evening near the Exchange, one tortoiseshell lorgnette in a
+                        silver case. Reward offered. Apply Box 41, this office.<br /><br />
+                        <strong>WANTED</strong> — Experienced compositor, type-setting preferred. Morning hours. Enquire
+                        within at the Ledger offices, 3 Printing Lane.
+                    </p>
+                </div>
+
+            </div><!-- /grid-4 -->
+        </div><!-- /content -->
+
+        <!-- FOOTER -->
+        <footer class="footer">
+            <span>The Morning Ledger · 3 Printing Lane · Established 1842</span>
+            <span>Printed daily save Sundays and Public Holidays</span>
+            <span>Subscription: 4 Shillings per Quarter · Advertisements accepted</span>
+        </footer>
+
+    </div><!-- /page -->
+</body>
+
+</html>

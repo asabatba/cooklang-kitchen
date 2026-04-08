@@ -3,6 +3,7 @@ from flask import Blueprint, jsonify, request
 from ..auth import admin_required
 from ..db import get_db_connection
 from ..parser import extract_recipe_fields
+from ..translations import sync_term_catalog_for_source
 
 bp = Blueprint("admin_api", __name__, url_prefix="/api")
 
@@ -31,6 +32,7 @@ def create_recipe():
         "INSERT INTO recipes (title, description, category, source) VALUES (?, ?, ?, ?)",
         (title, description, category, source),
     )
+    sync_term_catalog_for_source(source, conn=conn)
     conn.commit()
     new_id = cur.lastrowid
     conn.close()
@@ -62,6 +64,7 @@ def update_recipe(recipe_id: int):
         "UPDATE recipes SET title=?, description=?, category=?, source=? WHERE id=?",
         (title, description, category, source, recipe_id),
     )
+    sync_term_catalog_for_source(source, conn=conn)
     conn.commit()
     conn.close()
 

@@ -1,1500 +1,1180 @@
-// ---- State ----
-let recipes = [];
-const selectedIds = new Set();
-let activeId = null;
-let activeData = null; // full recipe data for the currently viewed recipe
-let searchFilter = '';
-let adminMode = false;
-const ADMIN_MODE_PREF_KEY = 'cooklang_admin_mode_preference';
-const TIMER_STORAGE_KEY = 'cooklang_timers_v1';
-const RECIPE_SELECTION_STORAGE_KEY = 'cooklang_recipe_selection_v1';
-const TIMER_COMPLETE_TTL_MS = 15000;
-let lastShoppingData = null;
-let recipeLoadToken = 0;
-let timerDockCollapsed = false;
 
-const timerStore = {
-  active: new Map(),
-  completed: new Map(),
-  tickHandle: null,
-};
+(() => {
+  const APP_CONFIG = window.__APP_CONFIG__ || {};
+  const ADMIN_MODE_PREF_KEY = 'cooklang_admin_mode_preference';
+  const TIMER_STORAGE_KEY = 'cooklang_timers_v1';
+  const RECIPE_SELECTION_STORAGE_KEY = 'cooklang_recipe_selection_v1';
+  const THEME_STORAGE_KEY = 'cooklang_theme';
+  const LANGUAGE_STORAGE_KEY = 'cooklang_language';
+  const TIMER_COMPLETE_TTL_MS = 15000;
 
-// ---- API ----
-async function fetchRecipes() {
-  const res = await fetch('/api/recipes');
-  recipes = await res.json();
-  renderRecipeList();
-}
+  const CK_TOKEN_RE = /(@([^\s@#~{}]+(?:\s+[^\s@#~{}]+)*?)\{([^}]*)\}(?:\(([^)]*)\))?)|(@([a-zA-Z\u00C0-\u024F][a-zA-Z0-9\u00C0-\u024F _-]*))|(#([^\s@#~{}]+(?:\s+[^\s@#~{}]+)*?)\{([^}]*)\}(?:\(([^)]*)\))?)|(#([a-zA-Z\u00C0-\u024F][a-zA-Z0-9\u00C0-\u024F _-]*))|(~([^\s@#~{}]*)\{([^}]*)\})/g;
+  const SRC_RE = /(@[^\s@#~{}]+(?:\s+[^\s@#~{}]+)*?\{[^}]*\}(?:\([^)]*\))?)|(@[a-zA-Z\u00C0-\u024F][a-zA-Z0-9\u00C0-\u024F _-]*)|(#[^\s@#~{}]+(?:\s+[^\s@#~{}]+)*?\{[^}]*\})|(#[a-zA-Z\u00C0-\u024F][a-zA-Z0-9\u00C0-\u024F _-]*)|(~[^\s@#~{}]*\{[^}]*\})/g;
 
-async function fetchRecipeDetail(id) {
-  const res = await fetch(`/api/recipes/${id}`);
-  if (!res.ok) throw new Error(`Failed to load recipe ${id}`);
-  return await res.json();
-}
-
-async function fetchCombined(ids) {
-  const res = await fetch('/api/combine', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ ids }),
-  });
-  return await res.json();
-}
-
-// ---- Toast ----
-function toast(msg) {
-  const el = document.createElement('div');
-  el.className = 'toast';
-  el.textContent = msg;
-  document.body.appendChild(el);
-  setTimeout(() => el.remove(), 2200);
-}
-
-// ---- URL selection ----
-function recipeExists(id) {
-  return recipes.some(r => r.id === id);
-}
-
-function getRecipeIdFromUrl() {
-  const params = new URLSearchParams(window.location.search);
-  const raw = params.get('recipe');
-  if (!raw) return null;
-  const id = parseInt(raw, 10);
-  return Number.isInteger(id) && id > 0 ? id : null;
-}
-
-function setRecipeIdInUrl(id, options = {}) {
-  const { replace = false } = options;
-  const url = new URL(window.location.href);
-  const current = getRecipeIdFromUrl();
-  if (id === null) url.searchParams.delete('recipe');
-  else url.searchParams.set('recipe', String(id));
-
-  if (current === id && !replace) return;
-
-  const next = `${url.pathname}${url.search}${url.hash}`;
-  if (replace) history.replaceState({ recipeId: id }, '', next);
-  else history.pushState({ recipeId: id }, '', next);
-}
-
-function persistRecipeSelection(id) {
-  try {
-    if (id === null || id === undefined) localStorage.removeItem(RECIPE_SELECTION_STORAGE_KEY);
-    else localStorage.setItem(RECIPE_SELECTION_STORAGE_KEY, String(id));
-  } catch {
-    // Ignore storage failures.
+  function esc(value) {
+    if (value === null || value === undefined) return '';
+    const div = document.createElement('div');
+    div.textContent = String(value);
+    return div.innerHTML;
   }
-}
 
-function getFallbackRecipeSelection() {
-  try {
-    const raw = localStorage.getItem(RECIPE_SELECTION_STORAGE_KEY);
-    if (!raw) return null;
-    const id = parseInt(raw, 10);
-    return Number.isInteger(id) && id > 0 ? id : null;
-  } catch {
+  function formatMetaValue(value) {
+    if (Array.isArray(value)) return value.join(', ');
+    if (value === null || value === undefined) return '';
+    return String(value);
+  }
+
+  function getTranslationLanguages() {
+    const raw = Array.isArray(APP_CONFIG.translationLanguages) ? APP_CONFIG.translationLanguages : ['en'];
+    const unique = [];
+    const seen = new Set();
+    raw.forEach((code) => {
+      const normalized = String(code || '').trim().toLowerCase();
+      if (!normalized || seen.has(normalized)) return;
+      seen.add(normalized);
+      unique.push({
+        code: normalized,
+        label: normalized === 'en' ? 'English' : normalized.toUpperCase(),
+      });
+    });
+    if (!seen.has('en')) unique.unshift({ code: 'en', label: 'English' });
+    return unique;
+  }
+
+  function normalizeTimerUnit(unitRaw) {
+    const unit = (unitRaw || '').trim().toLowerCase().replace(/\./g, '');
+    const map = {
+      s: 'seconds', sec: 'seconds', secs: 'seconds', second: 'seconds', seconds: 'seconds',
+      m: 'minutes', min: 'minutes', mins: 'minutes', minute: 'minutes', minutes: 'minutes',
+      h: 'hours', hr: 'hours', hrs: 'hours', hour: 'hours', hours: 'hours',
+      seg: 'seconds', segs: 'seconds', segundo: 'seconds', segundos: 'seconds',
+      minuto: 'minutes', minutos: 'minutes', hora: 'hours', horas: 'hours',
+    };
+    return map[unit] || '';
+  }
+
+  function parseQuantityNumber(raw) {
+    const value = String(raw || '').trim().replace(',', '.');
+    if (!value) return null;
+
+    function parseSingle(input) {
+      const cleaned = String(input || '').trim();
+      if (!cleaned) return null;
+      const mixed = cleaned.match(/^(\d+)\s+(\d+)\/(\d+)$/);
+      if (mixed) {
+        const whole = Number(mixed[1]);
+        const num = Number(mixed[2]);
+        const den = Number(mixed[3]);
+        if (!den) return null;
+        return whole + (num / den);
+      }
+      const frac = cleaned.match(/^(\d+)\/(\d+)$/);
+      if (frac) {
+        const num = Number(frac[1]);
+        const den = Number(frac[2]);
+        if (!den) return null;
+        return num / den;
+      }
+      const n = Number(cleaned);
+      return Number.isFinite(n) ? n : null;
+    }
+
+    const range = value.match(/^(.+?)\s*(?:-|–|—|\ba\b)\s*(.+)$/i);
+    if (range) {
+      const left = parseSingle(range[1]);
+      const right = parseSingle(range[2]);
+      if (left !== null && right !== null) return Math.max(left, right);
+    }
+    return parseSingle(value);
+  }
+
+  function parseTimerQuantityToSeconds(quantity, unit) {
+    const amount = parseQuantityNumber(quantity);
+    if (amount === null || amount <= 0) return null;
+    const normalized = normalizeTimerUnit(unit);
+    if (normalized === 'seconds') return Math.max(1, Math.round(amount));
+    if (normalized === 'minutes') return Math.max(1, Math.round(amount * 60));
+    if (normalized === 'hours') return Math.max(1, Math.round(amount * 3600));
     return null;
   }
-}
 
-function clearRecipeSelection(options = {}) {
-  const { syncUrl = true, replaceUrl = true } = options;
-  activeId = null;
-  activeData = null;
-  renderRecipeList();
-  if (syncUrl) setRecipeIdInUrl(null, { replace: replaceUrl });
-  persistRecipeSelection(null);
-  document.getElementById('mainContent').innerHTML = `
-    <div class="empty-state">
-      <div class="icon">📖</div>
-      <h2>Choose a recipe</h2>
-      <p>Select a recipe from the sidebar to view it,<br>or check multiple to build a shopping list.</p>
-    </div>`;
-}
-
-async function syncSelectionFromUrl() {
-  const routeId = getRecipeIdFromUrl();
-  if (routeId && recipeExists(routeId)) {
-    await viewRecipe(routeId, { syncUrl: false, closePanels: false });
-    return;
-  }
-  if (routeId && !recipeExists(routeId)) {
-    setRecipeIdInUrl(null, { replace: true });
-  }
-  const fallbackId = getFallbackRecipeSelection();
-  if (fallbackId && recipeExists(fallbackId)) {
-    setRecipeIdInUrl(fallbackId, { replace: true });
-    await viewRecipe(fallbackId, { syncUrl: false, closePanels: false });
-    return;
-  }
-  clearRecipeSelection({ syncUrl: false });
-}
-
-window.addEventListener('popstate', () => {
-  syncSelectionFromUrl();
-});
-
-// ---- Timer helpers ----
-function buildTimerId(recipeId, stepIndex, timerIndex) {
-  return `${recipeId}:${stepIndex}:${timerIndex}`;
-}
-
-function normalizeTimerUnit(unitRaw) {
-  const unit = (unitRaw || '').trim().toLowerCase().replace(/\./g, '');
-  const map = {
-    // English
-    s: 'seconds', sec: 'seconds', secs: 'seconds', second: 'seconds', seconds: 'seconds',
-    m: 'minutes', min: 'minutes', mins: 'minutes', minute: 'minutes', minutes: 'minutes',
-    h: 'hours', hr: 'hours', hrs: 'hours', hour: 'hours', hours: 'hours',
-    // Spanish
-    seg: 'seconds', segs: 'seconds', segundo: 'seconds', segundos: 'seconds',
-    minuto: 'minutes', minutos: 'minutes',
-    hora: 'hours', horas: 'hours',
-  };
-  return map[unit] || '';
-}
-
-function parseQuantityNumber(raw) {
-  const value = String(raw || '').trim().replace(',', '.');
-  if (!value) return null;
-
-  function parseSingle(input) {
-    const cleaned = String(input || '').trim();
-    if (!cleaned) return null;
-
-    const mixed = cleaned.match(/^(\d+)\s+(\d+)\/(\d+)$/);
-    if (mixed) {
-      const whole = Number(mixed[1]);
-      const num = Number(mixed[2]);
-      const den = Number(mixed[3]);
-      if (den === 0) return null;
-      return whole + (num / den);
-    }
-
-    const frac = cleaned.match(/^(\d+)\/(\d+)$/);
-    if (frac) {
-      const num = Number(frac[1]);
-      const den = Number(frac[2]);
-      if (den === 0) return null;
-      return num / den;
-    }
-
-    const n = Number(cleaned);
-    if (!Number.isFinite(n)) return null;
-    return n;
+  function formatClock(totalSec) {
+    const sec = Math.max(0, Math.floor(totalSec || 0));
+    const h = Math.floor(sec / 3600);
+    const m = Math.floor((sec % 3600) / 60);
+    const s = sec % 60;
+    if (h > 0) return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+    return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
   }
 
-  // Support ranges like "3-4", "15 - 18", "3–4", "3 a 4".
-  // We use the upper bound to avoid under-timing recipe steps.
-  const range = value.match(/^(.+?)\s*(?:-|–|—|\ba\b)\s*(.+)$/i);
-  if (range) {
-    const left = parseSingle(range[1]);
-    const right = parseSingle(range[2]);
-    if (left !== null && right !== null) return Math.max(left, right);
+  function formatCountdownDisplay(remainingSec) {
+    const sec = Math.floor(remainingSec || 0);
+    if (sec < 0) return `+${formatClock(Math.abs(sec))}`;
+    return formatClock(sec);
   }
 
-  return parseSingle(value);
-}
-
-function parseTimerQuantityToSeconds(quantity, unit) {
-  const amount = parseQuantityNumber(quantity);
-  if (amount === null || amount <= 0) return null;
-  const normalized = normalizeTimerUnit(unit);
-  if (normalized === 'seconds') return Math.max(1, Math.round(amount));
-  if (normalized === 'minutes') return Math.max(1, Math.round(amount * 60));
-  if (normalized === 'hours') return Math.max(1, Math.round(amount * 3600));
-  return null;
-}
-
-function formatClock(totalSec) {
-  const sec = Math.max(0, Math.floor(totalSec || 0));
-  const h = Math.floor(sec / 3600);
-  const m = Math.floor((sec % 3600) / 60);
-  const s = sec % 60;
-  if (h > 0) return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
-  return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
-}
-
-function formatCountdownDisplay(remainingSec) {
-  const sec = Math.floor(remainingSec || 0);
-  if (sec < 0) return `+${formatClock(Math.abs(sec))}`;
-  return formatClock(sec);
-}
-
-function buildStepTimersForRecipe(recipeData, stepIndex) {
-  const step = recipeData?.parsed?.steps?.[stepIndex];
-  if (!step || !Array.isArray(step.timers)) return [];
-
-  const list = [];
-  step.timers.forEach((tm, timerIndex) => {
-    const durationSec = parseTimerQuantityToSeconds(tm.quantity, tm.unit);
-    if (!durationSec) return;
-    const qty = [tm.quantity, tm.unit].filter(Boolean).join(' ');
-    const label = tm.name ? `${tm.name}${qty ? ` (${qty})` : ''}` : qty;
-    list.push({
-      timerId: buildTimerId(recipeData.id, stepIndex, timerIndex),
-      recipeId: recipeData.id,
-      recipeTitle: recipeData.title,
-      stepIndex,
-      stepNumber: stepIndex + 1,
-      timerIndex,
-      label: label || 'Timer',
-      durationSec,
-    });
-  });
-
-  return list;
-}
-
-function getRemainingSeconds(runtime, nowMs = Date.now()) {
-  if (runtime.status === 'paused') return Math.round(runtime.pausedRemainingSec || 0);
-  if (runtime.status === 'running') return Math.max(0, Math.ceil((runtime.endsAtMs - nowMs) / 1000));
-  if (runtime.status === 'overdue') {
-    const overdueStart = runtime.overdueSinceMs || runtime.endsAtMs || nowMs;
-    return -Math.max(0, Math.floor((nowMs - overdueStart) / 1000));
-  }
-  return 0;
-}
-
-function getElapsedSeconds(runtime, nowMs = Date.now()) {
-  if (runtime.status === 'overdue') {
-    const overdueStart = runtime.overdueSinceMs || runtime.endsAtMs || nowMs;
-    const overtime = Math.max(0, Math.floor((nowMs - overdueStart) / 1000));
-    return runtime.durationSec + overtime;
-  }
-  const remaining = getRemainingSeconds(runtime, nowMs);
-  return Math.max(0, runtime.durationSec - Math.max(0, remaining));
-}
-
-function serializeRuntime(runtime) {
-  return {
-    timerId: runtime.timerId,
-    recipeId: runtime.recipeId,
-    recipeTitle: runtime.recipeTitle,
-    stepIndex: runtime.stepIndex,
-    stepNumber: runtime.stepNumber,
-    timerIndex: runtime.timerIndex,
-    label: runtime.label,
-    durationSec: runtime.durationSec,
-    status: runtime.status,
-    startedAtMs: runtime.startedAtMs,
-    endsAtMs: runtime.endsAtMs,
-    pausedRemainingSec: runtime.pausedRemainingSec,
-    pausedFromStatus: runtime.pausedFromStatus || null,
-    overdueSinceMs: runtime.overdueSinceMs || null,
-    pendingQueue: runtime.pendingQueue || [],
-  };
-}
-
-function saveTimersToStorage() {
-  try {
-    if (timerStore.active.size === 0) {
-      localStorage.removeItem(TIMER_STORAGE_KEY);
-      return;
-    }
-    const payload = {
-      active: Array.from(timerStore.active.values()).map(serializeRuntime),
-      savedAtMs: Date.now(),
-    };
-    localStorage.setItem(TIMER_STORAGE_KEY, JSON.stringify(payload));
-  } catch {
-    // Ignore storage failures.
-  }
-}
-
-function restoreTimersFromStorage() {
-  let raw = null;
-  try {
-    raw = localStorage.getItem(TIMER_STORAGE_KEY);
-  } catch {
-    raw = null;
-  }
-  if (!raw) return;
-
-  try {
-    const payload = JSON.parse(raw);
-    if (!payload || !Array.isArray(payload.active)) return;
-
-    const now = Date.now();
-    for (const item of payload.active) {
-      if (!item || typeof item !== 'object') continue;
-      if (typeof item.timerId !== 'string') continue;
-      if (!Number.isFinite(item.durationSec) || item.durationSec <= 0) continue;
-
-      const runtime = {
-        timerId: item.timerId,
-        recipeId: Number(item.recipeId),
-        recipeTitle: String(item.recipeTitle || `Recipe #${Number(item.recipeId)}`),
-        stepIndex: Number(item.stepIndex),
-        stepNumber: Number(item.stepNumber) || (Number(item.stepIndex) + 1),
-        timerIndex: Number(item.timerIndex),
-        label: String(item.label || 'Timer'),
-        durationSec: Number(item.durationSec),
-        status: item.status === 'paused' || item.status === 'overdue' ? item.status : 'running',
-        startedAtMs: Number(item.startedAtMs) || now,
-        endsAtMs: Number(item.endsAtMs) || now,
-        pausedRemainingSec: item.pausedRemainingSec === null ? null : Number(item.pausedRemainingSec),
-        pausedFromStatus: typeof item.pausedFromStatus === 'string' ? item.pausedFromStatus : null,
-        overdueSinceMs: item.overdueSinceMs === null || item.overdueSinceMs === undefined ? null : Number(item.overdueSinceMs),
-        pendingQueue: Array.isArray(item.pendingQueue) ? item.pendingQueue.filter(p => p && typeof p === 'object') : [],
-      };
-
-      if (runtime.status === 'running' && runtime.endsAtMs <= now) {
-        runtime.status = 'overdue';
-        runtime.overdueSinceMs = runtime.endsAtMs;
-      }
-      if (runtime.status === 'overdue' && !Number.isFinite(runtime.overdueSinceMs)) {
-        runtime.overdueSinceMs = runtime.endsAtMs || now;
-      }
-      timerStore.active.set(runtime.timerId, runtime);
-    }
-
-    if (timerStore.active.size > 0) {
-      ensureTimerTicker();
-      tickTimers({ silentRestored: true });
-    }
-  } catch {
+  async function fetchJSON(url, options = {}) {
+    const res = await fetch(url, options);
+    let body = null;
     try {
-      localStorage.removeItem(TIMER_STORAGE_KEY);
+      body = await res.json();
     } catch {
-      // Ignore cleanup errors.
+      body = null;
     }
-  }
-}
-
-function playTimerDoneBeep() {
-  try {
-    const ctx = new (window.AudioContext || window.webkitAudioContext)();
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
-    osc.type = 'sine';
-    osc.frequency.value = 880;
-    gain.gain.value = 0.04;
-    osc.connect(gain);
-    gain.connect(ctx.destination);
-    const now = ctx.currentTime;
-    osc.start(now);
-    gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.18);
-    osc.stop(now + 0.18);
-  } catch {
-    // Audio playback can fail due to browser policy; ignore.
-  }
-}
-
-function ensureTimerTicker() {
-  if (timerStore.tickHandle) return;
-  timerStore.tickHandle = window.setInterval(() => tickTimers(), 1000);
-}
-
-function stopTimerTickerIfIdle() {
-  if (timerStore.active.size > 0 || timerStore.completed.size > 0) return;
-  if (timerStore.tickHandle) {
-    clearInterval(timerStore.tickHandle);
-    timerStore.tickHandle = null;
-  }
-}
-
-function findStepActiveTimer(recipeId, stepIndex) {
-  const candidates = [];
-  for (const rt of timerStore.active.values()) {
-    if (rt.recipeId === recipeId && rt.stepIndex === stepIndex) candidates.push(rt);
-  }
-  candidates.sort((a, b) => a.timerIndex - b.timerIndex);
-  return candidates[0] || null;
-}
-
-function stepHasActiveTimer(recipeId, stepIndex) {
-  return !!findStepActiveTimer(recipeId, stepIndex);
-}
-
-function stepWasRecentlyCompleted(recipeId, stepIndex) {
-  const now = Date.now();
-  for (const done of timerStore.completed.values()) {
-    if (done.recipeId === recipeId && done.stepIndex === stepIndex && done.expiresAtMs > now && done.stepComplete) {
-      return true;
-    }
-  }
-  return false;
-}
-
-function stopTimersForStep(recipeId, stepIndex, suppressSave = false) {
-  const toDelete = [];
-  for (const [timerId, rt] of timerStore.active.entries()) {
-    if (rt.recipeId === recipeId && rt.stepIndex === stepIndex) toDelete.push(timerId);
-  }
-  toDelete.forEach(timerId => timerStore.active.delete(timerId));
-  if (!suppressSave) saveTimersToStorage();
-}
-
-function startTimerDescriptor(descriptor, pendingQueue = [], options = {}) {
-  const { fromChain = false } = options;
-
-  const existing = timerStore.active.get(descriptor.timerId);
-  if (existing && (existing.status === 'running' || existing.status === 'paused' || existing.status === 'overdue')) {
-    renderTimerDock();
-    refreshActiveRecipeTimerUI();
-    return existing;
+    return { res, body };
   }
 
-  const now = Date.now();
-  const runtime = {
-    timerId: descriptor.timerId,
-    recipeId: descriptor.recipeId,
-    recipeTitle: descriptor.recipeTitle,
-    stepIndex: descriptor.stepIndex,
-    stepNumber: descriptor.stepNumber,
-    timerIndex: descriptor.timerIndex,
-    label: descriptor.label,
-    durationSec: descriptor.durationSec,
-    status: 'running',
-    startedAtMs: now,
-    endsAtMs: now + (descriptor.durationSec * 1000),
-    pausedRemainingSec: null,
-    pausedFromStatus: null,
-    overdueSinceMs: null,
-    pendingQueue,
-  };
-
-  timerStore.active.set(runtime.timerId, runtime);
-  timerStore.completed.delete(runtime.timerId);
-  ensureTimerTicker();
-  saveTimersToStorage();
-
-  if (!fromChain) toast(`Started timer: ${runtime.label}`);
-
-  renderTimerDock();
-  refreshActiveRecipeTimerUI();
-  return runtime;
-}
-
-function startStepTimersForRecipe(recipeData, stepIndex) {
-  if (!recipeData) return;
-  const descriptors = buildStepTimersForRecipe(recipeData, stepIndex);
-  if (!descriptors.length) {
-    toast('This step has no valid timer duration.');
-    return;
-  }
-
-  const existing = findStepActiveTimer(recipeData.id, stepIndex);
-  if (existing) {
-    const ok = confirm('A timer is already running for this step. Replace it?');
-    if (!ok) return;
-    stopTimersForStep(recipeData.id, stepIndex, true);
-  }
-
-  startTimerDescriptor(descriptors[0], descriptors.slice(1));
-}
-
-function pauseTimerById(timerId) {
-  const rt = timerStore.active.get(timerId);
-  if (!rt || (rt.status !== 'running' && rt.status !== 'overdue')) return;
-  rt.pausedRemainingSec = getRemainingSeconds(rt);
-  rt.pausedFromStatus = rt.status;
-  rt.status = 'paused';
-  saveTimersToStorage();
-  renderTimerDock();
-  refreshActiveRecipeTimerUI();
-}
-
-function resumeTimerById(timerId) {
-  const rt = timerStore.active.get(timerId);
-  if (!rt || rt.status !== 'paused') return;
-  const now = Date.now();
-  const previousStatus = rt.pausedFromStatus || 'running';
-  const remaining = Math.round(rt.pausedRemainingSec || rt.durationSec);
-  if (previousStatus === 'overdue' || remaining < 0) {
-    rt.status = 'overdue';
-    rt.overdueSinceMs = now - (Math.abs(remaining) * 1000);
-  } else {
-    const safeRemaining = Math.max(1, remaining);
-    rt.startedAtMs = now - ((rt.durationSec - safeRemaining) * 1000);
-    rt.endsAtMs = now + (safeRemaining * 1000);
-    rt.status = 'running';
-  }
-  rt.pausedRemainingSec = null;
-  rt.pausedFromStatus = null;
-  ensureTimerTicker();
-  saveTimersToStorage();
-  renderTimerDock();
-  refreshActiveRecipeTimerUI();
-}
-
-function stopTimerById(timerId) {
-  const rt = timerStore.active.get(timerId);
-  if (!rt) return;
-  timerStore.active.delete(timerId);
-  timerStore.completed.delete(timerId);
-  if (rt.pendingQueue && rt.pendingQueue.length > 0) {
-    const next = rt.pendingQueue[0];
-    const rest = rt.pendingQueue.slice(1);
-    startTimerDescriptor(next, rest, { fromChain: true });
-  } else if (rt.status === 'overdue') {
-    toast(`Step ${rt.stepNumber} complete for ${rt.recipeTitle}`);
-  }
-  saveTimersToStorage();
-  stopTimerTickerIfIdle();
-  renderTimerDock();
-  refreshActiveRecipeTimerUI();
-}
-
-function skipTimerById(timerId) {
-  const rt = timerStore.active.get(timerId);
-  if (!rt) return;
-  completeRuntimeTimer(rt, { skipped: true });
-}
-
-function stopAllTimersForRecipe(recipeId) {
-  const ids = [];
-  for (const [timerId, rt] of timerStore.active.entries()) {
-    if (rt.recipeId === recipeId) ids.push(timerId);
-  }
-  ids.forEach(timerId => timerStore.active.delete(timerId));
-  if (ids.length) toast(`Stopped ${ids.length} timer${ids.length > 1 ? 's' : ''}.`);
-  saveTimersToStorage();
-  stopTimerTickerIfIdle();
-  renderTimerDock();
-  refreshActiveRecipeTimerUI();
-}
-
-function completeRuntimeTimer(runtime, options = {}) {
-  const { skipped = false, silent = false } = options;
-  timerStore.active.delete(runtime.timerId);
-
-  timerStore.completed.set(runtime.timerId, {
-    timerId: runtime.timerId,
-    recipeId: runtime.recipeId,
-    recipeTitle: runtime.recipeTitle,
-    stepIndex: runtime.stepIndex,
-    stepNumber: runtime.stepNumber,
-    timerIndex: runtime.timerIndex,
-    label: runtime.label,
-    status: skipped ? 'skipped' : 'done',
-    expiresAtMs: Date.now() + TIMER_COMPLETE_TTL_MS,
-    stepComplete: runtime.pendingQueue.length === 0,
-  });
-
-  if (!silent) {
-    if (!skipped) {
-      playTimerDoneBeep();
-      toast(`Timer done: ${runtime.label}`);
-    }
-    if (runtime.pendingQueue.length === 0) {
-      toast(`Step ${runtime.stepNumber} complete for ${runtime.recipeTitle}`);
-    }
-  }
-
-  if (runtime.pendingQueue.length > 0) {
-    const next = runtime.pendingQueue[0];
-    const rest = runtime.pendingQueue.slice(1);
-    startTimerDescriptor(next, rest, { fromChain: true });
-  }
-
-  saveTimersToStorage();
-  stopTimerTickerIfIdle();
-  renderTimerDock();
-  refreshActiveRecipeTimerUI();
-}
-
-function tickTimers(options = {}) {
-  const { silentRestored = false } = options;
-  const now = Date.now();
-  const toOverdue = [];
-  let stateChanged = false;
-
-  for (const rt of timerStore.active.values()) {
-    if (rt.status === 'running' && rt.endsAtMs <= now) toOverdue.push(rt);
-  }
-
-  for (const done of timerStore.completed.values()) {
-    if (done.expiresAtMs <= now) {
-      timerStore.completed.delete(done.timerId);
-      stateChanged = true;
-    }
-  }
-
-  for (const rt of toOverdue) {
-    rt.status = 'overdue';
-    rt.overdueSinceMs = rt.endsAtMs || now;
-    stateChanged = true;
-    if (!silentRestored) {
-      playTimerDoneBeep();
-      toast(`Timer done: ${rt.label}`);
-    }
-  }
-
-  if (stateChanged) saveTimersToStorage();
-  renderTimerDock();
-  refreshActiveRecipeTimerUI();
-  stopTimerTickerIfIdle();
-}
-
-function getRecipeTimers(recipeId) {
-  const list = [];
-  for (const rt of timerStore.active.values()) {
-    if (rt.recipeId === recipeId) list.push(rt);
-  }
-  list.sort((a, b) => a.stepIndex - b.stepIndex || a.timerIndex - b.timerIndex);
-  return list;
-}
-
-function getStepTimerRowId(recipeId, stepIndex) {
-  return `stepTimerRow-${recipeId}-${stepIndex}`;
-}
-
-function renderStepTimerRow(recipeData, stepIndex) {
-  const step = recipeData?.parsed?.steps?.[stepIndex];
-  if (!step) return '';
-
-  const rawTimersCount = Array.isArray(step.timers) ? step.timers.length : 0;
-  if (!rawTimersCount) return '';
-
-  const validDescriptors = buildStepTimersForRecipe(recipeData, stepIndex);
-  if (!validDescriptors.length) {
-    return '<div class="step-timer-meta step-timer-muted">No valid timer duration in this step.</div>';
-  }
-
-  const active = findStepActiveTimer(recipeData.id, stepIndex);
-  if (active) {
-    const remaining = formatCountdownDisplay(getRemainingSeconds(active));
-    const elapsed = formatClock(getElapsedSeconds(active));
-    const status = active.status === 'paused' ? 'Paused' : active.status === 'overdue' ? 'Overtime' : 'Running';
-    return `
-      <div class="step-timer-meta">
-        <span class="timer-chip ${active.status}">${status}</span>
-        <span class="timer-title">⏱ ${esc(active.label)}</span>
-        <span class="timer-clock">${remaining}</span>
-        <span class="timer-elapsed">elapsed ${elapsed}</span>
-      </div>
-      <div class="timer-controls">
-        ${(active.status === 'running' || active.status === 'overdue')
-          ? `<button type="button" class="step-timer-btn" onclick="pauseTimerById('${active.timerId}')">Pause</button>`
-          : `<button type="button" class="step-timer-btn" onclick="resumeTimerById('${active.timerId}')">Resume</button>`}
-        <button type="button" class="step-timer-btn" onclick="skipTimerById('${active.timerId}')">Skip</button>
-        <button type="button" class="step-timer-btn danger" onclick="stopTimerById('${active.timerId}')">Stop</button>
-      </div>`;
-  }
-
-  const completed = stepWasRecentlyCompleted(recipeData.id, stepIndex);
-  return `
-    <div class="step-timer-meta ${completed ? 'step-timer-complete' : ''}">
-      <span class="timer-chip ready">Ready</span>
-      <span>${completed ? 'Step timer completed. Start again if needed.' : `${validDescriptors.length} timer${validDescriptors.length > 1 ? 's' : ''} available`}</span>
-    </div>
-    <div class="timer-controls">
-      <button type="button" class="step-timer-btn" onclick="startStepTimer(${stepIndex})">Start Step Timer</button>
-    </div>`;
-}
-
-function renderRecipeTimerPanel() {
-  const el = document.getElementById('recipeTimerPanel');
-  if (!el || !activeData) return;
-
-  const timers = getRecipeTimers(activeData.id);
-  if (!timers.length) {
-    el.innerHTML = '<div class="recipe-timer-panel"><span>No active timers for this recipe.</span></div>';
-    return;
-  }
-
-  let html = '<div class="recipe-timer-panel">';
-  html += `<div class="recipe-timer-head"><strong>${timers.length}</strong> active timer${timers.length > 1 ? 's' : ''}</div>`;
-  html += '<div class="recipe-timer-list">';
-  for (const rt of timers) {
-    const statusLabel = rt.status === 'paused' ? 'Paused' : rt.status === 'overdue' ? 'Overtime' : 'Running';
-    html += `<div class="recipe-timer-item">
-      <span class="timer-chip ${rt.status}">${statusLabel}</span>
-      <span>Step ${rt.stepNumber}: ${esc(rt.label)}</span>
-      <strong>${formatCountdownDisplay(getRemainingSeconds(rt))}</strong>
-    </div>`;
-  }
-  html += '</div>';
-  html += `<div class="timer-controls"><button type="button" class="step-timer-btn danger" onclick="stopAllTimersForRecipe(${activeData.id})">Stop All For Recipe</button></div>`;
-  html += '</div>';
-  el.innerHTML = html;
-}
-
-function refreshActiveRecipeTimerUI() {
-  if (!activeData) return;
-  renderRecipeTimerPanel();
-
-  const steps = activeData?.parsed?.steps || [];
-  for (let i = 0; i < steps.length; i++) {
-    const row = document.getElementById(getStepTimerRowId(activeData.id, i));
-    if (row) row.innerHTML = renderStepTimerRow(activeData, i);
-
-    const stepEl = document.getElementById(`recipeStep-${activeData.id}-${i}`);
-    if (stepEl) {
-      stepEl.classList.toggle('active-timer-step', stepHasActiveTimer(activeData.id, i));
-      stepEl.classList.toggle('timer-step-complete', stepWasRecentlyCompleted(activeData.id, i));
-    }
-  }
-}
-
-function toggleTimerDock() {
-  timerDockCollapsed = !timerDockCollapsed;
-  renderTimerDock();
-}
-
-function openRecipeFromTimer(recipeId) {
-  if (!recipeExists(recipeId)) {
-    toast('Recipe no longer exists');
-    return;
-  }
-  viewRecipe(recipeId);
-}
-
-function renderTimerDock() {
-  const dock = document.getElementById('timerDock');
-  if (!dock) return;
-
-  const active = Array.from(timerStore.active.values()).sort((a, b) => {
-    const rank = s => (s === 'overdue' ? 0 : s === 'running' ? 1 : 2);
-    if (a.status !== b.status) return rank(a.status) - rank(b.status);
-    return a.endsAtMs - b.endsAtMs;
-  });
-  const completed = Array.from(timerStore.completed.values()).sort((a, b) => b.expiresAtMs - a.expiresAtMs);
-
-  const hasEntries = active.length > 0 || completed.length > 0;
-  dock.classList.toggle('visible', hasEntries);
-  document.body.classList.toggle('timer-dock-visible', hasEntries);
-
-  if (!hasEntries) {
-    dock.innerHTML = '';
-    return;
-  }
-
-  let html = '<div class="timer-dock-bar">';
-  html += `<button type="button" class="timer-dock-toggle" onclick="toggleTimerDock()">${timerDockCollapsed ? '▲' : '▼'}</button>`;
-  html += `<div class="timer-dock-title">Timers <span class="timer-dock-count">${active.length}</span></div>`;
-  html += '</div>';
-
-  if (!timerDockCollapsed) {
-    html += '<div class="timer-dock-list">';
-
-    for (const rt of active) {
-      const remaining = formatCountdownDisplay(getRemainingSeconds(rt));
-      const elapsed = formatClock(getElapsedSeconds(rt));
-      const statusLabel = rt.status === 'paused' ? 'Paused' : rt.status === 'overdue' ? 'Overtime' : 'Running';
-      const canOpen = recipeExists(rt.recipeId);
-      html += `
-      <div class="timer-dock-item ${rt.status}">
-        <div class="timer-dock-item-head">
-          <span class="timer-chip ${rt.status}">${statusLabel}</span>
-          ${canOpen
-            ? `<button type="button" class="timer-link" onclick="openRecipeFromTimer(${rt.recipeId})">${esc(rt.recipeTitle)}</button>`
-            : `<span class="timer-link disabled">${esc(rt.recipeTitle)} (deleted)</span>`}
-          <span class="timer-step">Step ${rt.stepNumber}</span>
-        </div>
-        <div class="timer-dock-item-body">
-          <div class="timer-dock-label">${esc(rt.label)}</div>
-          <div class="timer-dock-clocks"><strong>${remaining}</strong><span>elapsed ${elapsed}</span></div>
-        </div>
-        <div class="timer-controls">
-          ${(rt.status === 'running' || rt.status === 'overdue')
-            ? `<button type="button" class="step-timer-btn" onclick="pauseTimerById('${rt.timerId}')">Pause</button>`
-            : `<button type="button" class="step-timer-btn" onclick="resumeTimerById('${rt.timerId}')">Resume</button>`}
-          <button type="button" class="step-timer-btn" onclick="skipTimerById('${rt.timerId}')">Skip</button>
-          <button type="button" class="step-timer-btn danger" onclick="stopTimerById('${rt.timerId}')">Stop</button>
-        </div>
-      </div>`;
-    }
-
-    for (const done of completed) {
-      html += `
-      <div class="timer-dock-item done">
-        <div class="timer-dock-item-head">
-          <span class="timer-chip ready">${done.status === 'skipped' ? 'Skipped' : 'Done'}</span>
-          ${recipeExists(done.recipeId)
-            ? `<button type="button" class="timer-link" onclick="openRecipeFromTimer(${done.recipeId})">${esc(done.recipeTitle)}</button>`
-            : `<span class="timer-link disabled">${esc(done.recipeTitle)} (deleted)</span>`}
-          <span class="timer-step">Step ${done.stepNumber}</span>
-        </div>
-        <div class="timer-dock-item-body">
-          <div class="timer-dock-label">${esc(done.label)}</div>
-        </div>
-      </div>`;
-    }
-    html += '</div>';
-  }
-
-  dock.innerHTML = html;
-}
-
-function startStepTimer(stepIndex) {
-  if (!activeData) return;
-  startStepTimersForRecipe(activeData, stepIndex);
-}
-
-// ---- Render recipe list ----
-function renderRecipeList() {
-  const container = document.getElementById('recipeList');
-  const filtered = recipes.filter(r =>
-    !searchFilter || r.title.toLowerCase().includes(searchFilter.toLowerCase()) ||
-    (r.description || '').toLowerCase().includes(searchFilter.toLowerCase())
-  );
-
-  const groups = {};
-  for (const r of filtered) {
-    const cat = r.category || 'Uncategorized';
-    if (!groups[cat]) groups[cat] = [];
-    groups[cat].push(r);
-  }
-
-  let html = '';
-  for (const [cat, items] of Object.entries(groups).sort()) {
-    html += `<div><div class="category-label">${esc(cat)}</div>`;
-    for (const r of items) {
-      const isActive = r.id === activeId;
-      const isSelected = selectedIds.has(r.id);
-      html += `
-          <div class="recipe-item ${isActive ? 'active' : ''} ${isSelected ? 'selected' : ''}" data-id="${r.id}">
-            <div class="recipe-check" onclick="event.stopPropagation(); toggleSelect(${r.id})"></div>
-            <div class="recipe-info" onclick="viewRecipe(${r.id})">
-              <h3>${esc(r.title)}</h3>
-              <p>${esc(r.description || '')}</p>
-            </div>
-          </div>`;
-    }
-    html += '</div>';
-  }
-  container.innerHTML = html;
-}
-
-function filterRecipes(val) {
-  searchFilter = val;
-  renderRecipeList();
-}
-
-function toggleSelect(id) {
-  if (selectedIds.has(id)) selectedIds.delete(id);
-  else selectedIds.add(id);
-  renderRecipeList();
-  updateShoppingList();
-  updateCartBadge();
-}
-
-function updateCartBadge() {
-  const b1 = document.getElementById('cartBadge');
-  const b2 = document.getElementById('shoppingBadge');
-  if (selectedIds.size > 0) {
-    b1.textContent = selectedIds.size; b1.style.display = 'flex';
-    b2.textContent = selectedIds.size; b2.style.display = 'inline-flex';
-  } else {
-    b1.style.display = 'none'; b2.style.display = 'none';
-  }
-}
-
-// ---- Copy / Export helpers ----
-function recipeToText(data) {
-  const p = data.parsed;
-  const lines = [];
-  lines.push(data.title.toUpperCase());
-  if (data.description) lines.push(data.description);
-  lines.push('');
-
-  if (Object.keys(p.metadata).length) {
-    for (const [k, v] of Object.entries(p.metadata)) lines.push(`${k}: ${formatMetaValue(v)}`);
-    lines.push('');
-  }
-
-  if (p.ingredients.length) {
-    lines.push('INGREDIENTS');
-    for (const ing of p.ingredients) {
-      const qty = [ing.quantity, ing.unit].filter(Boolean).join(' ');
-      lines.push(`  ${qty ? qty + ' ' : ''}${ing.name}${ing.preparation ? ' (' + ing.preparation + ')' : ''}`);
-    }
-    lines.push('');
-  }
-
-  lines.push('METHOD');
-  let num = 0;
-  for (const step of p.steps) {
-    num++;
-    lines.push(`  ${num}. ${step.text}`);
-  }
-  return lines.join('\n');
-}
-
-function recipeToMarkdown(data) {
-  const p = data.parsed;
-  const lines = [];
-  lines.push(`# ${data.title}`);
-  if (data.description) lines.push(`*${data.description}*`);
-  lines.push('');
-
-  if (Object.keys(p.metadata).length) {
-    for (const [k, v] of Object.entries(p.metadata)) lines.push(`**${k}:** ${formatMetaValue(v)}  `);
-    lines.push('');
-  }
-
-  if (p.ingredients.length) {
-    lines.push('## Ingredients');
-    for (const ing of p.ingredients) {
-      const qty = [ing.quantity, ing.unit].filter(Boolean).join(' ');
-      lines.push(`- ${qty ? qty + ' ' : ''}${ing.name}${ing.preparation ? ' (' + ing.preparation + ')' : ''}`);
-    }
-    lines.push('');
-  }
-
-  lines.push('## Method');
-  let num = 0;
-  for (const step of p.steps) {
-    num++;
-    lines.push(`${num}. ${step.text}`);
-  }
-  return lines.join('\n');
-}
-
-function recipeToCooklang(data) {
-  return data.source;
-}
-
-function shoppingToText() {
-  if (!lastShoppingData) return '';
-  const lines = ['SHOPPING LIST'];
-  if (lastShoppingData.recipes) lines.push('For: ' + lastShoppingData.recipes.join(', '));
-  lines.push('');
-  for (const ing of lastShoppingData.ingredients) {
-    const qty = [ing.quantity, ing.unit].filter(Boolean).join(' ');
-    lines.push(`  ${qty ? qty.padEnd(12) : ''.padEnd(12)} ${ing.name}`);
-  }
-  return lines.join('\n');
-}
-
-function shoppingToMarkdown() {
-  if (!lastShoppingData) return '';
-  const lines = ['# Shopping List'];
-  if (lastShoppingData.recipes) lines.push('*' + lastShoppingData.recipes.join(', ') + '*');
-  lines.push('');
-  for (const ing of lastShoppingData.ingredients) {
-    const qty = [ing.quantity, ing.unit].filter(Boolean).join(' ');
-    lines.push(`- ${qty ? '**' + qty + '** ' : ''}${ing.name}`);
-  }
-  return lines.join('\n');
-}
-
-async function copyToClipboard(text, label) {
-  try {
-    await navigator.clipboard.writeText(text);
-    toast(`${label} copied to clipboard`);
-  } catch {
-    // Fallback
-    const ta = document.createElement('textarea');
-    ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
-    document.body.appendChild(ta); ta.select();
-    document.execCommand('copy'); ta.remove();
-    toast(`${label} copied to clipboard`);
-  }
-}
-
-function downloadFile(content, filename) {
-  const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url; a.download = filename;
-  document.body.appendChild(a); a.click();
-  a.remove(); URL.revokeObjectURL(url);
-  toast(`Downloaded ${filename}`);
-}
-
-// Recipe copy/export
-function copyRecipe(format) {
-  if (!activeData) return;
-  const text = format === 'md' ? recipeToMarkdown(activeData)
-    : format === 'cook' ? recipeToCooklang(activeData)
-      : recipeToText(activeData);
-  copyToClipboard(text, 'Recipe');
-}
-
-function exportRecipe(format) {
-  if (!activeData) return;
-  const slug = activeData.title.toLowerCase().replace(/[^a-z0-9]+/g, '-');
-  if (format === 'md') {
-    downloadFile(recipeToMarkdown(activeData), `${slug}.md`);
-  } else if (format === 'cook') {
-    downloadFile(recipeToCooklang(activeData), `${slug}.cook`);
-  } else {
-    downloadFile(recipeToText(activeData), `${slug}.txt`);
-  }
-}
-
-// Shopping copy/export
-function copyShoppingList() {
-  copyToClipboard(shoppingToText(), 'Shopping list');
-}
-
-function exportShoppingList(format) {
-  if (format === 'md') {
-    downloadFile(shoppingToMarkdown(), 'shopping-list.md');
-  } else {
-    downloadFile(shoppingToText(), 'shopping-list.txt');
-  }
-}
-
-// ---- View recipe detail ----
-async function viewRecipe(id, options = {}) {
-  const { syncUrl = true, replaceUrl = false, closePanels = true } = options;
-  if (!recipeExists(id)) {
-    clearRecipeSelection({ syncUrl, replaceUrl: true });
-    return;
-  }
-
-  const token = ++recipeLoadToken;
-  activeId = id;
-  persistRecipeSelection(id);
-
-  if (syncUrl) setRecipeIdInUrl(id, { replace: replaceUrl });
-
-  renderRecipeList();
-  if (closePanels) closeDrawers();
-
-  const main = document.getElementById('mainContent');
-  main.innerHTML = '<div class="empty-state"><p style="font-style:italic;">Loading…</p></div>';
-
-  try {
-    const data = await fetchRecipeDetail(id);
-    if (token !== recipeLoadToken) return;
-
-    activeData = data;
-    const p = data.parsed;
-    let html = '<div class="recipe-detail">';
-
-    html += '<div class="recipe-title-row">';
-    html += `<h2>${esc(data.title)}</h2>`;
-    html += '<div class="recipe-actions">';
-    html += `<button class="action-btn" onclick="copyRecipe('text')" title="Copy as plain text">📋 Copy</button>`;
-    html += `<button class="action-btn" onclick="exportRecipe('cook')" title="Download .cook file">↓ .cook</button>`;
-    html += `<button class="action-btn" onclick="exportRecipe('md')" title="Download Markdown">↓ .md</button>`;
-    html += `<button class="action-btn" onclick="exportRecipe('txt')" title="Download plain text">↓ .txt</button>`;
-    if (adminMode) {
-      html += `<button class="action-btn" onclick="openEditRecipe(${data.id})" title="Edit recipe" style="color:var(--terracotta);">✎ Edit</button>`;
-    }
-    html += '</div></div>';
-
-    if (data.description) html += `<p class="description">${esc(data.description)}</p>`;
-
-    const meta = p.metadata || {};
-    if (Object.keys(meta).length) {
-      html += '<div class="recipe-meta-bar">';
-      for (const [k, v] of Object.entries(meta)) {
-        html += `<span class="meta-chip"><strong>${esc(k)}:</strong> ${esc(formatMetaValue(v))}</span>`;
+  window.kitchenApp = () => ({
+    translationLanguages: getTranslationLanguages(),
+    recipes: [],
+    selectedIds: [],
+    activeId: null,
+    activeData: null,
+    activeLoading: false,
+    activeError: '',
+    searchFilter: '',
+    showSource: false,
+    shoppingLoading: false,
+    lastShoppingData: null,
+    adminMode: false,
+    authStatus: { password_set: false, logged_in: false },
+    adminForm: { id: null, title: '', category: '', description: '', source: '' },
+    translationAdmin: {
+      language: '',
+      loading: false,
+      missing: { total: 0, counts: {}, labels: {} },
+      lastResult: null,
+      error: '',
+    },
+    loginPassword: '',
+    loginError: '',
+    recipeLoadToken: 0,
+    timers: { active: [], completed: [], tickHandle: null },
+    ui: {
+      sidebarOpen: false,
+      cartOpen: false,
+      adminModalOpen: false,
+      loginModalOpen: false,
+      translationModalOpen: false,
+      timerDockCollapsed: false,
+      toastQueue: [],
+      theme: 'dark',
+      language: 'en',
+    },
+
+    get selectedCount() { return this.selectedIds.length; },
+    get hasShoppingData() {
+      return !!(this.lastShoppingData && Array.isArray(this.lastShoppingData.ingredients) && this.lastShoppingData.ingredients.length > 0);
+    },
+    get hasAnyTimers() { return this.timers.active.length > 0 || this.timers.completed.length > 0; },
+    get currentLanguage() { return this.ui.language || 'en'; },
+    get nonEnglishTranslationLanguages() {
+      return this.translationLanguages.filter((lang) => lang.code !== 'en');
+    },
+
+    get filteredRecipesByCategory() {
+      const term = this.searchFilter.trim().toLowerCase();
+      const filtered = this.recipes.filter((r) => {
+        if (!term) return true;
+        return (r.title || '').toLowerCase().includes(term) || (r.description || '').toLowerCase().includes(term);
+      });
+      const groups = {};
+      for (const recipe of filtered) {
+        const cat = recipe.category || 'Uncategorized';
+        if (!groups[cat]) groups[cat] = [];
+        groups[cat].push(recipe);
       }
-      html += '</div>';
-    }
+      return Object.entries(groups).sort((a, b) => a[0].localeCompare(b[0]));
+    },
 
-    if (p.notes && p.notes.length) {
-      html += '<div class="section-title">Notes</div>';
-      for (const note of p.notes) {
-        html += `<div class="step" style="margin-bottom:0.25rem;"><span class="step-num">›</span><div class="step-text"><em>${esc(note.text)}</em></div></div>`;
+    get renderedSteps() {
+      if (!this.activeData || !this.activeData.parsed || !Array.isArray(this.activeData.parsed.steps)) return [];
+      let currentSection = '';
+      return this.activeData.parsed.steps.map((step, index) => {
+        const showSectionTitle = !!step.section && step.section !== currentSection;
+        if (showSectionTitle) currentSection = step.section;
+        return { step, index, stepNumber: index + 1, showSectionTitle, sectionTitle: step.section || '' };
+      });
+    },
+
+    get activeRecipeTimers() {
+      if (!this.activeData) return [];
+      return this.timers.active
+        .filter((rt) => rt.recipeId === this.activeData.id)
+        .sort((a, b) => a.stepIndex - b.stepIndex || a.timerIndex - b.timerIndex);
+    },
+
+    get sortedActiveTimers() {
+      const rank = (status) => (status === 'overdue' ? 0 : status === 'running' ? 1 : 2);
+      return [...this.timers.active].sort((a, b) => {
+        if (a.status !== b.status) return rank(a.status) - rank(b.status);
+        return a.endsAtMs - b.endsAtMs;
+      });
+    },
+
+    get sortedCompletedTimers() {
+      return [...this.timers.completed].sort((a, b) => b.expiresAtMs - a.expiresAtMs);
+    },
+
+    async init() {
+      this.initTheme();
+      this.initLanguage();
+      await this.fetchRecipes();
+      this.restoreTimersFromStorage();
+      await this.checkAuth();
+      if (this.getAdminModePreference()) {
+        if (!this.authStatus.password_set || this.authStatus.logged_in) this.activateAdmin(false);
+        else this.setAdminModePreference(false);
       }
-    }
+      await this.syncSelectionFromUrl();
+      window.addEventListener('popstate', () => this.syncSelectionFromUrl());
+    },
+    initLanguage() {
+      let language = 'en';
+      try {
+        const stored = localStorage.getItem(LANGUAGE_STORAGE_KEY);
+        if (stored && this.translationLanguages.some((lang) => lang.code === stored)) language = stored;
+      } catch {
+        language = 'en';
+      }
+      this.ui.language = language;
+      if (!this.translationAdmin.language && this.nonEnglishTranslationLanguages.length > 0) {
+        this.translationAdmin.language = this.nonEnglishTranslationLanguages[0].code;
+      }
+    },
 
-    if (p.ingredients.length) {
-      html += '<div class="section-title">Ingredients</div>';
-      html += '<div class="recipe-ingredients-grid">';
-      for (const ing of p.ingredients) {
+    persistLanguage(language) {
+      try {
+        localStorage.setItem(LANGUAGE_STORAGE_KEY, language);
+      } catch {
+        // ignore
+      }
+    },
+    initTheme() {
+      let theme = 'dark';
+      try {
+        const stored = localStorage.getItem(THEME_STORAGE_KEY);
+        if (stored === 'light' || stored === 'dark') theme = stored;
+        else theme = (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) ? 'dark' : 'light';
+      } catch {
+        theme = (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) ? 'dark' : 'light';
+      }
+      this.ui.theme = theme;
+      this.applyTheme();
+    },
+
+    applyTheme() {
+      if (this.ui.theme === 'light') document.documentElement.classList.remove('dark');
+      else document.documentElement.classList.add('dark');
+    },
+
+    toggleTheme() {
+      this.ui.theme = this.ui.theme === 'dark' ? 'light' : 'dark';
+      try {
+        localStorage.setItem(THEME_STORAGE_KEY, this.ui.theme);
+      } catch {
+        // ignore
+      }
+      this.applyTheme();
+    },
+
+    async changeLanguage(language) {
+      const next = this.translationLanguages.some((lang) => lang.code === language) ? language : 'en';
+      if (next === this.currentLanguage) return;
+      this.ui.language = next;
+      this.persistLanguage(next);
+      if (this.activeId) await this.loadActiveRecipe(this.activeId, { syncUrl: false, closePanels: false });
+      if (this.selectedIds.length > 0) await this.updateShoppingList();
+      this.toast(`Language set to ${next === 'en' ? 'English' : next.toUpperCase()}`);
+    },
+
+    toast(message) {
+      const id = Date.now() + Math.random();
+      this.ui.toastQueue.push({ id, message });
+      setTimeout(() => {
+        this.ui.toastQueue = this.ui.toastQueue.filter((t) => t.id !== id);
+      }, 2200);
+    },
+
+    closeDrawers() {
+      this.ui.sidebarOpen = false;
+      this.ui.cartOpen = false;
+    },
+
+    isSelected(id) { return this.selectedIds.includes(id); },
+
+    toggleSelect(id) {
+      if (this.isSelected(id)) this.selectedIds = this.selectedIds.filter((v) => v !== id);
+      else this.selectedIds = [...this.selectedIds, id];
+      this.updateShoppingList();
+    },
+
+    recipeExists(id) { return this.recipes.some((r) => r.id === id); },
+
+    getRecipeIdFromUrl() {
+      const params = new URLSearchParams(window.location.search);
+      const raw = params.get('recipe');
+      if (!raw) return null;
+      const id = parseInt(raw, 10);
+      return Number.isInteger(id) && id > 0 ? id : null;
+    },
+
+    setRecipeIdInUrl(id, options = {}) {
+      const { replace = false } = options;
+      const current = this.getRecipeIdFromUrl();
+      const url = new URL(window.location.href);
+      if (id === null) url.searchParams.delete('recipe');
+      else url.searchParams.set('recipe', String(id));
+      if (current === id && !replace) return;
+      const next = `${url.pathname}${url.search}${url.hash}`;
+      if (replace) history.replaceState({ recipeId: id }, '', next);
+      else history.pushState({ recipeId: id }, '', next);
+    },
+
+    persistRecipeSelection(id) {
+      try {
+        if (id === null || id === undefined) localStorage.removeItem(RECIPE_SELECTION_STORAGE_KEY);
+        else localStorage.setItem(RECIPE_SELECTION_STORAGE_KEY, String(id));
+      } catch {
+        // ignore
+      }
+    },
+
+    getFallbackRecipeSelection() {
+      try {
+        const raw = localStorage.getItem(RECIPE_SELECTION_STORAGE_KEY);
+        if (!raw) return null;
+        const id = parseInt(raw, 10);
+        return Number.isInteger(id) && id > 0 ? id : null;
+      } catch {
+        return null;
+      }
+    },
+
+    async fetchRecipes() {
+      const { res, body } = await fetchJSON('/api/recipes');
+      if (!res.ok || !Array.isArray(body)) throw new Error('Could not load recipes');
+      this.recipes = body;
+      this.selectedIds = this.selectedIds.filter((id) => this.recipeExists(id));
+    },
+
+    clearRecipeSelection(options = {}) {
+      const { syncUrl = true, replaceUrl = true } = options;
+      this.activeId = null;
+      this.activeData = null;
+      this.activeLoading = false;
+      this.activeError = '';
+      this.showSource = false;
+      if (syncUrl) this.setRecipeIdInUrl(null, { replace: replaceUrl });
+      this.persistRecipeSelection(null);
+    },
+
+    async syncSelectionFromUrl() {
+      const routeId = this.getRecipeIdFromUrl();
+      if (routeId && this.recipeExists(routeId)) {
+        await this.loadActiveRecipe(routeId, { syncUrl: false, closePanels: false });
+        return;
+      }
+      if (routeId && !this.recipeExists(routeId)) this.setRecipeIdInUrl(null, { replace: true });
+      const fallbackId = this.getFallbackRecipeSelection();
+      if (fallbackId && this.recipeExists(fallbackId)) {
+        this.setRecipeIdInUrl(fallbackId, { replace: true });
+        await this.loadActiveRecipe(fallbackId, { syncUrl: false, closePanels: false });
+        return;
+      }
+      this.clearRecipeSelection({ syncUrl: false });
+    },
+
+    async loadActiveRecipe(id, options = {}) {
+      const { syncUrl = true, replaceUrl = false, closePanels = true } = options;
+      if (!this.recipeExists(id)) {
+        this.clearRecipeSelection({ syncUrl, replaceUrl: true });
+        return;
+      }
+      const token = ++this.recipeLoadToken;
+      this.activeId = id;
+      this.activeError = '';
+      this.activeLoading = true;
+      this.showSource = false;
+      if (syncUrl) this.setRecipeIdInUrl(id, { replace: replaceUrl });
+      this.persistRecipeSelection(id);
+      if (closePanels) this.closeDrawers();
+
+      const { res, body } = await fetchJSON(`/api/recipes/${id}?lang=${encodeURIComponent(this.currentLanguage)}`);
+      if (token !== this.recipeLoadToken) return;
+      if (!res.ok || !body) {
+        this.activeLoading = false;
+        this.activeData = null;
+        this.activeError = 'Could not load recipe';
+        this.toast('Could not load recipe');
+        return;
+      }
+      this.activeData = body;
+      this.activeLoading = false;
+    },
+
+    async updateShoppingList() {
+      if (this.selectedIds.length === 0) {
+        this.lastShoppingData = null;
+        this.shoppingLoading = false;
+        return;
+      }
+      this.shoppingLoading = true;
+      const { res, body } = await fetchJSON('/api/combine', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids: this.selectedIds, language: this.currentLanguage }),
+      });
+      this.shoppingLoading = false;
+      if (!res.ok || !body) {
+        this.toast('Could not build shopping list');
+        return;
+      }
+      this.lastShoppingData = body;
+    },
+    recipeToText(data) {
+      const p = data.parsed;
+      const lines = [];
+      lines.push((data.title || '').toUpperCase());
+      if (data.description) lines.push(data.description);
+      lines.push('');
+      if (Object.keys(p.metadata || {}).length) {
+        for (const [k, v] of Object.entries(p.metadata)) lines.push(`${k}: ${formatMetaValue(v)}`);
+        lines.push('');
+      }
+      if (p.ingredients.length) {
+        lines.push('INGREDIENTS');
+        for (const ing of p.ingredients) {
+          const qty = [ing.quantity, ing.unit].filter(Boolean).join(' ');
+          lines.push(`  ${qty ? qty + ' ' : ''}${ing.name}${ing.preparation ? ` (${ing.preparation})` : ''}`);
+        }
+        lines.push('');
+      }
+      lines.push('METHOD');
+      p.steps.forEach((step, idx) => lines.push(`  ${idx + 1}. ${step.text}`));
+      return lines.join('\n');
+    },
+
+    recipeToMarkdown(data) {
+      const p = data.parsed;
+      const lines = [];
+      lines.push(`# ${data.title}`);
+      if (data.description) lines.push(`*${data.description}*`);
+      lines.push('');
+      if (Object.keys(p.metadata || {}).length) {
+        for (const [k, v] of Object.entries(p.metadata)) lines.push(`**${k}:** ${formatMetaValue(v)}  `);
+        lines.push('');
+      }
+      if (p.ingredients.length) {
+        lines.push('## Ingredients');
+        for (const ing of p.ingredients) {
+          const qty = [ing.quantity, ing.unit].filter(Boolean).join(' ');
+          lines.push(`- ${qty ? qty + ' ' : ''}${ing.name}${ing.preparation ? ` (${ing.preparation})` : ''}`);
+        }
+        lines.push('');
+      }
+      lines.push('## Method');
+      p.steps.forEach((step, idx) => lines.push(`${idx + 1}. ${step.text}`));
+      return lines.join('\n');
+    },
+
+    recipeToCooklang(data) { return data.source || ''; },
+
+    shoppingToText() {
+      if (!this.lastShoppingData) return '';
+      const lines = ['SHOPPING LIST'];
+      if (this.lastShoppingData.recipes) lines.push(`For: ${this.lastShoppingData.recipes.join(', ')}`);
+      lines.push('');
+      for (const ing of this.lastShoppingData.ingredients) {
         const qty = [ing.quantity, ing.unit].filter(Boolean).join(' ');
-        html += '<div class="ingredient-pill">';
-        if (qty) html += `<span class="qty">${esc(qty)}</span>`;
-        html += `<span>${esc(ing.name)}${ing.preparation ? ' <small style="color:var(--ink-muted);font-style:italic;">(' + esc(ing.preparation) + ')</small>' : ''}</span>`;
-        html += '</div>';
+        lines.push(`  ${qty ? qty.padEnd(12) : ''.padEnd(12)} ${ing.name}`);
       }
-      html += '</div>';
-    }
+      return lines.join('\n');
+    },
 
-    html += '<div class="section-title">Method</div>';
-    html += '<div id="recipeTimerPanel"></div>';
-
-    let currentSection = '';
-    let stepNum = 0;
-    for (const step of p.steps) {
-      if (step.section && step.section !== currentSection) {
-        currentSection = step.section;
-        html += `<div class="section-title" style="color:var(--sage);font-size:0.95rem;margin-top:1rem;">${esc(currentSection)}</div>`;
+    shoppingToMarkdown() {
+      if (!this.lastShoppingData) return '';
+      const lines = ['# Shopping List'];
+      if (this.lastShoppingData.recipes) lines.push(`*${this.lastShoppingData.recipes.join(', ')}*`);
+      lines.push('');
+      for (const ing of this.lastShoppingData.ingredients) {
+        const qty = [ing.quantity, ing.unit].filter(Boolean).join(' ');
+        lines.push(`- ${qty ? `**${qty}** ` : ''}${ing.name}`);
       }
+      return lines.join('\n');
+    },
 
-      const stepIndex = stepNum;
-      stepNum++;
-      const stepClasses = ['step'];
-      if (stepHasActiveTimer(data.id, stepIndex)) stepClasses.push('active-timer-step');
-      if (stepWasRecentlyCompleted(data.id, stepIndex)) stepClasses.push('timer-step-complete');
+    async copyToClipboard(text, label) {
+      try {
+        await navigator.clipboard.writeText(text);
+      } catch {
+        const ta = document.createElement('textarea');
+        ta.value = text;
+        ta.style.position = 'fixed';
+        ta.style.opacity = '0';
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand('copy');
+        ta.remove();
+      }
+      this.toast(`${label} copied to clipboard`);
+    },
 
-      const highlighted = highlightStep(step);
-      html += `<div class="${stepClasses.join(' ')}" id="recipeStep-${data.id}-${stepIndex}" data-step-index="${stepIndex}">`;
-      html += `<span class="step-num">${stepNum}</span><div class="step-text">${highlighted}`;
-      html += `<div class="step-timer-row" id="${getStepTimerRowId(data.id, stepIndex)}"></div>`;
-      html += '</div></div>';
-    }
+    downloadFile(content, filename) {
+      const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      this.toast(`Downloaded ${filename}`);
+    },
 
-    html += `<button class="source-toggle" onclick="this.nextElementSibling.classList.toggle('visible')">
-      &lt;/&gt; View Cooklang source
-    </button>`;
-    html += `<pre class="source-block">${highlightSource(data.source)}</pre>`;
-    html += '</div>';
-    main.innerHTML = html;
+    copyRecipe(format) {
+      if (!this.activeData) return;
+      const text = format === 'md' ? this.recipeToMarkdown(this.activeData)
+        : format === 'cook' ? this.recipeToCooklang(this.activeData)
+          : this.recipeToText(this.activeData);
+      this.copyToClipboard(text, 'Recipe');
+    },
 
-    refreshActiveRecipeTimerUI();
-    renderTimerDock();
-  } catch {
-    if (token !== recipeLoadToken) return;
-    toast('Could not load recipe');
-    clearRecipeSelection({ syncUrl: true, replaceUrl: true });
-  }
-}
+    exportRecipe(format) {
+      if (!this.activeData) return;
+      const slug = (this.activeData.title || 'recipe').toLowerCase().replace(/[^a-z0-9]+/g, '-');
+      if (format === 'md') this.downloadFile(this.recipeToMarkdown(this.activeData), `${slug}.md`);
+      else if (format === 'cook') this.downloadFile(this.recipeToCooklang(this.activeData), `${slug}.cook`);
+      else this.downloadFile(this.recipeToText(this.activeData), `${slug}.txt`);
+    },
 
-// Single-pass tokenizer: finds all @ingredients, #cookware, ~timers in one regex
-// so replacements never interfere with each other.
-const CK_TOKEN_RE = /(@([^\s@#~{}]+(?:\s+[^\s@#~{}]+)*?)\{([^}]*)\}(?:\(([^)]*)\))?)|(@([a-zA-Z\u00C0-\u024F][a-zA-Z0-9\u00C0-\u024F _-]*))|(#([^\s@#~{}]+(?:\s+[^\s@#~{}]+)*?)\{([^}]*)\}(?:\(([^)]*)\))?)|(#([a-zA-Z\u00C0-\u024F][a-zA-Z0-9\u00C0-\u024F _-]*))|(~([^\s@#~{}]*)\{([^}]*)\})/g;
+    copyShoppingList() { this.copyToClipboard(this.shoppingToText(), 'Shopping list'); },
 
-function highlightStep(step) {
-  return step.raw.replace(CK_TOKEN_RE, (match, iBrace, iName, iQty, iPrep, iBare, iBareName, cBrace, cName, cQty, cPrep, cBare, cBareName, tm, tName, tQty) => {
-    if (iBrace) {
-      // @ingredient{qty%unit}(prep)
-      const [qty, unit] = (iQty || '').includes('%') ? iQty.split('%', 2) : [iQty, ''];
-      const display = [qty, unit, iName].filter(Boolean).join(' ');
-      const prepStr = iPrep ? ' (' + esc(iPrep) + ')' : '';
-      return '<span class="ing-highlight">' + esc(display) + prepStr + '</span>';
-    }
-    if (iBare) {
-      return '<span class="ing-highlight">' + esc(iBareName) + '</span>';
-    }
-    if (cBrace) {
-      return '<span class="cookware-highlight">' + esc(cName) + '</span>';
-    }
-    if (cBare) {
-      return '<span class="cookware-highlight">' + esc(cBareName) + '</span>';
-    }
-    if (tm) {
-      const [qty, unit] = (tQty || '').includes('%') ? tQty.split('%', 2) : [tQty, ''];
-      let display = [qty, unit].filter(Boolean).join(' ');
-      if (tName) display = tName + ' (' + display + ')';
-      return '<span class="timer-highlight">⏱ ' + esc(display) + '</span>';
-    }
-    return match;
+    exportShoppingList(format) {
+      if (format === 'md') this.downloadFile(this.shoppingToMarkdown(), 'shopping-list.md');
+      else this.downloadFile(this.shoppingToText(), 'shopping-list.txt');
+    },
+
+    async checkAuth() {
+      const { res, body } = await fetchJSON('/api/auth/status');
+      if (res.ok && body) this.authStatus = body;
+    },
+
+    getAdminModePreference() {
+      try {
+        return localStorage.getItem(ADMIN_MODE_PREF_KEY) === '1';
+      } catch {
+        return false;
+      }
+    },
+
+    setAdminModePreference(enabled) {
+      try {
+        if (enabled) localStorage.setItem(ADMIN_MODE_PREF_KEY, '1');
+        else localStorage.removeItem(ADMIN_MODE_PREF_KEY);
+      } catch {
+        // ignore
+      }
+    },
+
+    async toggleAdmin() {
+      if (this.adminMode) {
+        this.adminMode = false;
+        this.setAdminModePreference(false);
+        this.toast('Admin mode off');
+        return;
+      }
+      await this.checkAuth();
+      if (this.authStatus.password_set && !this.authStatus.logged_in) {
+        this.loginPassword = '';
+        this.loginError = '';
+        this.ui.loginModalOpen = true;
+        return;
+      }
+      this.activateAdmin();
+    },
+
+    activateAdmin(showToast = true) {
+      this.adminMode = true;
+      this.setAdminModePreference(true);
+      if (showToast) this.toast('Admin mode on');
+    },
+
+    closeLogin() { this.ui.loginModalOpen = false; },
+
+    async submitLogin() {
+      const { res } = await fetchJSON('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password: this.loginPassword }),
+      });
+      if (!res.ok) {
+        this.loginError = 'Wrong password. Please try again.';
+        return;
+      }
+      this.authStatus.logged_in = true;
+      this.closeLogin();
+      this.activateAdmin();
+    },
+
+    openNewRecipe() {
+      this.adminForm = { id: null, title: '', category: '', description: '', source: '' };
+      this.ui.adminModalOpen = true;
+    },
+
+    async openEditRecipe(id) {
+      const { res, body } = await fetchJSON(`/api/recipes/${id}`);
+      if (!res.ok || !body) {
+        this.toast('Could not load recipe');
+        return;
+      }
+      this.adminForm = {
+        id: body.id,
+        title: body.title || '',
+        category: body.category || '',
+        description: body.description || '',
+        source: body.source || '',
+      };
+      this.ui.adminModalOpen = true;
+    },
+
+    closeAdmin() { this.ui.adminModalOpen = false; },
+
+    async openTranslationsAdmin() {
+      if (this.nonEnglishTranslationLanguages.length === 0) {
+        this.toast('No target languages configured');
+        return;
+      }
+      if (!this.translationAdmin.language) this.translationAdmin.language = this.nonEnglishTranslationLanguages[0].code;
+      this.translationAdmin.lastResult = null;
+      this.translationAdmin.error = '';
+      this.ui.translationModalOpen = true;
+      await this.loadMissingTranslations();
+    },
+
+    closeTranslationsAdmin() {
+      this.ui.translationModalOpen = false;
+    },
+
+    async loadMissingTranslations() {
+      if (!this.translationAdmin.language) return;
+      this.translationAdmin.loading = true;
+      this.translationAdmin.error = '';
+      const { res, body } = await fetchJSON(`/api/translations/missing?language=${encodeURIComponent(this.translationAdmin.language)}`);
+      this.translationAdmin.loading = false;
+      if (res.ok && body) {
+        this.translationAdmin.missing = {
+          total: body.total_missing || 0,
+          counts: body.counts || {},
+          labels: body.labels || {},
+        };
+        return;
+      }
+      if (res.status === 401) {
+        this.adminMode = false;
+        this.authStatus.logged_in = false;
+        this.setAdminModePreference(false);
+        this.closeTranslationsAdmin();
+        this.toast('Session expired - please log in again');
+        return;
+      }
+      this.translationAdmin.error = (body && body.error) || 'Could not load missing translation counts';
+    },
+
+    async runTranslationUpdate() {
+      if (!this.translationAdmin.language) return;
+      this.translationAdmin.loading = true;
+      this.translationAdmin.error = '';
+      const { res, body } = await fetchJSON('/api/translations/update-missing', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ language: this.translationAdmin.language }),
+      });
+      this.translationAdmin.loading = false;
+      if (res.ok && body) {
+        this.translationAdmin.lastResult = body;
+        await this.loadMissingTranslations();
+        if (this.currentLanguage === this.translationAdmin.language) {
+          if (this.activeId) await this.loadActiveRecipe(this.activeId, { syncUrl: false, closePanels: false });
+          if (this.selectedIds.length > 0) await this.updateShoppingList();
+        }
+        this.toast(`Stored ${body.stored} translations for ${this.translationAdmin.language.toUpperCase()}`);
+        return;
+      }
+      if (res.status === 401) {
+        this.adminMode = false;
+        this.authStatus.logged_in = false;
+        this.setAdminModePreference(false);
+        this.closeTranslationsAdmin();
+        this.toast('Session expired - please log in again');
+        return;
+      }
+      this.translationAdmin.error = (body && body.error) || 'Translation update failed';
+    },
+
+    async saveRecipe() {
+      const payload = {
+        title: this.adminForm.title || '',
+        category: this.adminForm.category || '',
+        description: this.adminForm.description || '',
+        source: this.adminForm.source || '',
+      };
+      if (!payload.source.trim()) {
+        this.toast('Source is required');
+        return;
+      }
+      const id = this.adminForm.id;
+      const url = id ? `/api/recipes/${id}` : '/api/recipes';
+      const method = id ? 'PUT' : 'POST';
+      const { res, body } = await fetchJSON(url, {
+        method,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      if (res.ok && body) {
+        this.toast(id ? 'Recipe updated' : 'Recipe created');
+        this.closeAdmin();
+        await this.fetchRecipes();
+        await this.loadActiveRecipe(body.id);
+        return;
+      }
+      if (res.status === 401) {
+        this.adminMode = false;
+        this.authStatus.logged_in = false;
+        this.setAdminModePreference(false);
+        this.toast('Session expired - please log in again');
+        return;
+      }
+      this.toast(`Error: ${(body && body.error) || 'Unknown'}`);
+    },
+
+    async deleteRecipe() {
+      const id = this.adminForm.id;
+      if (!id) return;
+      if (!confirm('Delete this recipe permanently?')) return;
+      const { res } = await fetchJSON(`/api/recipes/${id}`, { method: 'DELETE' });
+      if (res.ok) {
+        this.toast('Recipe deleted');
+        this.closeAdmin();
+        this.selectedIds = this.selectedIds.filter((v) => v !== Number(id));
+        await this.fetchRecipes();
+        await this.updateShoppingList();
+        if (this.activeId === Number(id)) this.clearRecipeSelection({ syncUrl: true, replaceUrl: true });
+        return;
+      }
+      if (res.status === 401) {
+        this.adminMode = false;
+        this.authStatus.logged_in = false;
+        this.setAdminModePreference(false);
+        this.toast('Session expired - please log in again');
+      }
+    },
+
+    buildTimerId(recipeId, stepIndex, timerIndex) {
+      return `${recipeId}:${stepIndex}:${timerIndex}`;
+    },
+
+    buildStepTimersForRecipe(recipeData, stepIndex) {
+      const step = recipeData?.parsed?.steps?.[stepIndex];
+      if (!step || !Array.isArray(step.timers)) return [];
+      const list = [];
+      step.timers.forEach((tm, timerIndex) => {
+        const durationSec = parseTimerQuantityToSeconds(tm.quantity, tm.unit);
+        if (!durationSec) return;
+        const qty = [tm.quantity, tm.unit].filter(Boolean).join(' ');
+        const label = tm.name ? `${tm.name}${qty ? ` (${qty})` : ''}` : qty;
+        list.push({
+          timerId: this.buildTimerId(recipeData.id, stepIndex, timerIndex),
+          recipeId: recipeData.id,
+          recipeTitle: recipeData.title,
+          stepIndex,
+          stepNumber: stepIndex + 1,
+          timerIndex,
+          label: label || 'Timer',
+          durationSec,
+        });
+      });
+      return list;
+    },
+
+    stepTimerRawCount(step) { return Array.isArray(step?.timers) ? step.timers.length : 0; },
+    stepTimerDescriptors(recipeData, stepIndex) { return this.buildStepTimersForRecipe(recipeData, stepIndex); },
+
+    stepActiveTimer(recipeId, stepIndex) {
+      const list = this.timers.active
+        .filter((rt) => rt.recipeId === recipeId && rt.stepIndex === stepIndex)
+        .sort((a, b) => a.timerIndex - b.timerIndex);
+      return list[0] || null;
+    },
+
+    stepHasActiveTimer(recipeId, stepIndex) { return !!this.stepActiveTimer(recipeId, stepIndex); },
+
+    stepWasRecentlyCompleted(recipeId, stepIndex) {
+      const now = Date.now();
+      return this.timers.completed.some((done) => done.recipeId === recipeId
+        && done.stepIndex === stepIndex
+        && done.expiresAtMs > now
+        && done.stepComplete);
+    },
+
+    getRemainingSeconds(runtime, nowMs = Date.now()) {
+      if (!runtime) return 0;
+      if (runtime.status === 'paused') return Math.round(runtime.pausedRemainingSec || 0);
+      if (runtime.status === 'running') return Math.max(0, Math.ceil((runtime.endsAtMs - nowMs) / 1000));
+      if (runtime.status === 'overdue') {
+        const overdueStart = runtime.overdueSinceMs || runtime.endsAtMs || nowMs;
+        return -Math.max(0, Math.floor((nowMs - overdueStart) / 1000));
+      }
+      return 0;
+    },
+
+    getElapsedSeconds(runtime, nowMs = Date.now()) {
+      if (!runtime) return 0;
+      if (runtime.status === 'overdue') {
+        const overdueStart = runtime.overdueSinceMs || runtime.endsAtMs || nowMs;
+        const overtime = Math.max(0, Math.floor((nowMs - overdueStart) / 1000));
+        return runtime.durationSec + overtime;
+      }
+      const remaining = this.getRemainingSeconds(runtime, nowMs);
+      return Math.max(0, runtime.durationSec - Math.max(0, remaining));
+    },
+
+    formatClock,
+    formatCountdownDisplay,
+
+    touchTimers() {
+      this.timers.active = [...this.timers.active];
+      this.timers.completed = [...this.timers.completed];
+    },
+
+    ensureTimerTicker() {
+      if (this.timers.tickHandle) return;
+      this.timers.tickHandle = window.setInterval(() => this.tickTimers(), 1000);
+    },
+
+    stopTimerTickerIfIdle() {
+      if (this.timers.active.length > 0 || this.timers.completed.length > 0) return;
+      if (this.timers.tickHandle) {
+        clearInterval(this.timers.tickHandle);
+        this.timers.tickHandle = null;
+      }
+    },
+
+    playTimerDoneBeep() {
+      try {
+        const ctx = new (window.AudioContext || window.webkitAudioContext)();
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = 'sine';
+        osc.frequency.value = 880;
+        gain.gain.value = 0.04;
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        const now = ctx.currentTime;
+        osc.start(now);
+        gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.18);
+        osc.stop(now + 0.18);
+      } catch {
+        // ignore
+      }
+    },
+
+    saveTimersToStorage() {
+      try {
+        if (this.timers.active.length === 0) {
+          localStorage.removeItem(TIMER_STORAGE_KEY);
+          return;
+        }
+        const payload = { active: this.timers.active, savedAtMs: Date.now() };
+        localStorage.setItem(TIMER_STORAGE_KEY, JSON.stringify(payload));
+      } catch {
+        // ignore
+      }
+    },
+
+    restoreTimersFromStorage() {
+      let raw = null;
+      try {
+        raw = localStorage.getItem(TIMER_STORAGE_KEY);
+      } catch {
+        raw = null;
+      }
+      if (!raw) return;
+      try {
+        const payload = JSON.parse(raw);
+        if (!payload || !Array.isArray(payload.active)) return;
+        const now = Date.now();
+        const restored = [];
+        for (const item of payload.active) {
+          if (!item || typeof item.timerId !== 'string') continue;
+          if (!Number.isFinite(item.durationSec) || item.durationSec <= 0) continue;
+          const runtime = {
+            timerId: item.timerId,
+            recipeId: Number(item.recipeId),
+            recipeTitle: String(item.recipeTitle || `Recipe #${Number(item.recipeId)}`),
+            stepIndex: Number(item.stepIndex),
+            stepNumber: Number(item.stepNumber) || (Number(item.stepIndex) + 1),
+            timerIndex: Number(item.timerIndex),
+            label: String(item.label || 'Timer'),
+            durationSec: Number(item.durationSec),
+            status: item.status === 'paused' || item.status === 'overdue' ? item.status : 'running',
+            startedAtMs: Number(item.startedAtMs) || now,
+            endsAtMs: Number(item.endsAtMs) || now,
+            pausedRemainingSec: item.pausedRemainingSec === null ? null : Number(item.pausedRemainingSec),
+            pausedFromStatus: typeof item.pausedFromStatus === 'string' ? item.pausedFromStatus : null,
+            overdueSinceMs: item.overdueSinceMs === null || item.overdueSinceMs === undefined ? null : Number(item.overdueSinceMs),
+            pendingQueue: Array.isArray(item.pendingQueue) ? item.pendingQueue : [],
+          };
+          if (runtime.status === 'running' && runtime.endsAtMs <= now) {
+            runtime.status = 'overdue';
+            runtime.overdueSinceMs = runtime.endsAtMs;
+          }
+          if (runtime.status === 'overdue' && !Number.isFinite(runtime.overdueSinceMs)) runtime.overdueSinceMs = runtime.endsAtMs || now;
+          restored.push(runtime);
+        }
+        this.timers.active = restored;
+        if (restored.length > 0) {
+          this.ensureTimerTicker();
+          this.tickTimers({ silentRestored: true });
+        }
+      } catch {
+        try {
+          localStorage.removeItem(TIMER_STORAGE_KEY);
+        } catch {
+          // ignore
+        }
+      }
+    },
+
+    startTimerDescriptor(descriptor, pendingQueue = [], options = {}) {
+      const { fromChain = false } = options;
+      const existing = this.timers.active.find((rt) => rt.timerId === descriptor.timerId);
+      if (existing) return existing;
+      const now = Date.now();
+      const runtime = {
+        timerId: descriptor.timerId,
+        recipeId: descriptor.recipeId,
+        recipeTitle: descriptor.recipeTitle,
+        stepIndex: descriptor.stepIndex,
+        stepNumber: descriptor.stepNumber,
+        timerIndex: descriptor.timerIndex,
+        label: descriptor.label,
+        durationSec: descriptor.durationSec,
+        status: 'running',
+        startedAtMs: now,
+        endsAtMs: now + (descriptor.durationSec * 1000),
+        pausedRemainingSec: null,
+        pausedFromStatus: null,
+        overdueSinceMs: null,
+        pendingQueue,
+      };
+      this.timers.active = [...this.timers.active, runtime];
+      this.timers.completed = this.timers.completed.filter((done) => done.timerId !== runtime.timerId);
+      this.ensureTimerTicker();
+      this.saveTimersToStorage();
+      if (!fromChain) this.toast(`Started timer: ${runtime.label}`);
+      return runtime;
+    },
+
+    stopTimersForStep(recipeId, stepIndex, suppressSave = false) {
+      this.timers.active = this.timers.active.filter((rt) => !(rt.recipeId === recipeId && rt.stepIndex === stepIndex));
+      if (!suppressSave) this.saveTimersToStorage();
+    },
+
+    startStepTimersForRecipe(recipeData, stepIndex) {
+      if (!recipeData) return;
+      const descriptors = this.buildStepTimersForRecipe(recipeData, stepIndex);
+      if (!descriptors.length) {
+        this.toast('This step has no valid timer duration.');
+        return;
+      }
+      const existing = this.stepActiveTimer(recipeData.id, stepIndex);
+      if (existing) {
+        const ok = confirm('A timer is already running for this step. Replace it?');
+        if (!ok) return;
+        this.stopTimersForStep(recipeData.id, stepIndex, true);
+      }
+      this.startTimerDescriptor(descriptors[0], descriptors.slice(1));
+      this.touchTimers();
+    },
+
+    startStepTimer(stepIndex) {
+      if (!this.activeData) return;
+      this.startStepTimersForRecipe(this.activeData, stepIndex);
+    },
+
+    pauseTimerById(timerId) {
+      const rt = this.timers.active.find((item) => item.timerId === timerId);
+      if (!rt || (rt.status !== 'running' && rt.status !== 'overdue')) return;
+      rt.pausedRemainingSec = this.getRemainingSeconds(rt);
+      rt.pausedFromStatus = rt.status;
+      rt.status = 'paused';
+      this.saveTimersToStorage();
+      this.touchTimers();
+    },
+
+    resumeTimerById(timerId) {
+      const rt = this.timers.active.find((item) => item.timerId === timerId);
+      if (!rt || rt.status !== 'paused') return;
+      const now = Date.now();
+      const previousStatus = rt.pausedFromStatus || 'running';
+      const remaining = Math.round(rt.pausedRemainingSec || rt.durationSec);
+      if (previousStatus === 'overdue' || remaining < 0) {
+        rt.status = 'overdue';
+        rt.overdueSinceMs = now - (Math.abs(remaining) * 1000);
+      } else {
+        const safeRemaining = Math.max(1, remaining);
+        rt.startedAtMs = now - ((rt.durationSec - safeRemaining) * 1000);
+        rt.endsAtMs = now + (safeRemaining * 1000);
+        rt.status = 'running';
+      }
+      rt.pausedRemainingSec = null;
+      rt.pausedFromStatus = null;
+      this.ensureTimerTicker();
+      this.saveTimersToStorage();
+      this.touchTimers();
+    },
+
+    stopTimerById(timerId) {
+      const rt = this.timers.active.find((item) => item.timerId === timerId);
+      if (!rt) return;
+      this.timers.active = this.timers.active.filter((item) => item.timerId !== timerId);
+      this.timers.completed = this.timers.completed.filter((done) => done.timerId !== timerId);
+      if (rt.pendingQueue && rt.pendingQueue.length > 0) {
+        const next = rt.pendingQueue[0];
+        const rest = rt.pendingQueue.slice(1);
+        this.startTimerDescriptor(next, rest, { fromChain: true });
+      } else if (rt.status === 'overdue') {
+        this.toast(`Step ${rt.stepNumber} complete for ${rt.recipeTitle}`);
+      }
+      this.saveTimersToStorage();
+      this.stopTimerTickerIfIdle();
+      this.touchTimers();
+    },
+
+    skipTimerById(timerId) {
+      const rt = this.timers.active.find((item) => item.timerId === timerId);
+      if (!rt) return;
+      this.completeRuntimeTimer(rt, { skipped: true });
+    },
+
+    stopAllTimersForRecipe(recipeId) {
+      const count = this.timers.active.filter((rt) => rt.recipeId === recipeId).length;
+      this.timers.active = this.timers.active.filter((rt) => rt.recipeId !== recipeId);
+      if (count > 0) this.toast(`Stopped ${count} timer${count > 1 ? 's' : ''}.`);
+      this.saveTimersToStorage();
+      this.stopTimerTickerIfIdle();
+      this.touchTimers();
+    },
+
+    completeRuntimeTimer(runtime, options = {}) {
+      const { skipped = false, silent = false } = options;
+      this.timers.active = this.timers.active.filter((rt) => rt.timerId !== runtime.timerId);
+      this.timers.completed = [
+        ...this.timers.completed,
+        {
+          timerId: runtime.timerId,
+          recipeId: runtime.recipeId,
+          recipeTitle: runtime.recipeTitle,
+          stepIndex: runtime.stepIndex,
+          stepNumber: runtime.stepNumber,
+          timerIndex: runtime.timerIndex,
+          label: runtime.label,
+          status: skipped ? 'skipped' : 'done',
+          expiresAtMs: Date.now() + TIMER_COMPLETE_TTL_MS,
+          stepComplete: runtime.pendingQueue.length === 0,
+        },
+      ];
+      if (!silent) {
+        if (!skipped) {
+          this.playTimerDoneBeep();
+          this.toast(`Timer done: ${runtime.label}`);
+        }
+        if (runtime.pendingQueue.length === 0) this.toast(`Step ${runtime.stepNumber} complete for ${runtime.recipeTitle}`);
+      }
+      if (runtime.pendingQueue.length > 0) {
+        const next = runtime.pendingQueue[0];
+        const rest = runtime.pendingQueue.slice(1);
+        this.startTimerDescriptor(next, rest, { fromChain: true });
+      }
+      this.saveTimersToStorage();
+      this.stopTimerTickerIfIdle();
+      this.touchTimers();
+    },
+
+    tickTimers(options = {}) {
+      const { silentRestored = false } = options;
+      const now = Date.now();
+      let changed = false;
+      for (const rt of this.timers.active) {
+        if (rt.status === 'running' && rt.endsAtMs <= now) {
+          rt.status = 'overdue';
+          rt.overdueSinceMs = rt.endsAtMs || now;
+          changed = true;
+          if (!silentRestored) {
+            this.playTimerDoneBeep();
+            this.toast(`Timer done: ${rt.label}`);
+          }
+        }
+      }
+      const keepCompleted = this.timers.completed.filter((done) => done.expiresAtMs > now);
+      if (keepCompleted.length !== this.timers.completed.length) {
+        this.timers.completed = keepCompleted;
+        changed = true;
+      }
+      if (changed) this.saveTimersToStorage();
+      this.touchTimers();
+      this.stopTimerTickerIfIdle();
+    },
+
+    highlightStep(step) {
+      const ingredients = Array.isArray(step.ingredients) ? [...step.ingredients] : [];
+      const cookware = Array.isArray(step.cookware) ? [...step.cookware] : [];
+      const timers = Array.isArray(step.timers) ? [...step.timers] : [];
+      return esc(step.raw).replace(CK_TOKEN_RE, (match) => {
+        if (match.startsWith('@')) {
+          const ing = ingredients.shift();
+          if (!ing) return esc(match);
+          const display = [ing.quantity, ing.unit, ing.name].filter(Boolean).join(' ');
+          const prepStr = ing.preparation ? ` (${esc(ing.preparation)})` : '';
+          return `<span class="font-semibold text-amber-600">${esc(display)}${prepStr}</span>`;
+        }
+        if (match.startsWith('#')) {
+          const tool = cookware.shift();
+          if (!tool) return esc(match);
+          return `<span class="font-semibold text-emerald-600">${esc(tool.name)}</span>`;
+        }
+        if (match.startsWith('~')) {
+          const timer = timers.shift();
+          if (!timer) return esc(match);
+          let display = [timer.quantity, timer.unit].filter(Boolean).join(' ');
+          if (timer.name) display = `${timer.name}${display ? ` (${display})` : ''}`;
+          return `<span class="font-semibold text-yellow-500">[timer ${esc(display)}]</span>`;
+        }
+        return esc(match);
+      });
+    },
+
+    highlightSource(source) {
+      let text = esc(source);
+      text = text.replace(/^(---\s*)$/gm, '<span class="text-zinc-500">$1</span>');
+      text = text.replace(/^([A-Za-z0-9_-]+\s*:\s*.+)$/gm, '<span class="text-zinc-500">$1</span>');
+      text = text.replace(/^(\s*-\s+.+)$/gm, '<span class="text-zinc-500">$1</span>');
+      text = text.replace(/^(&gt;&gt;\s*.+)$/gm, '<span class="text-zinc-500">$1</span>');
+      text = text.replace(/^(&gt;\s*.+)$/gm, '<span class="text-zinc-500">$1</span>');
+      text = text.replace(/^(=+\s*.*?=*\s*)$/gm, '<span class="text-zinc-100 font-semibold">$1</span>');
+      text = text.replace(SRC_RE, (m, ingB, ingN, cwB, cwN, timer) => {
+        if (ingB) return `<span class="text-amber-400">${ingB}</span>`;
+        if (ingN) return `<span class="text-amber-400">${ingN}</span>`;
+        if (cwB) return `<span class="text-emerald-300">${cwB}</span>`;
+        if (cwN) return `<span class="text-emerald-300">${cwN}</span>`;
+        if (timer) return `<span class="text-yellow-300">${timer}</span>`;
+        return m;
+      });
+      return text;
+    },
+
+    formatMetaValue,
   });
-}
-
-function highlightSource(source) {
-  let text = esc(source);
-  // Metadata, notes, and sections are line-level, safe to do separately
-  text = text.replace(/^(---\s*)$/gm, '<span class="ck-meta">$1</span>');
-  text = text.replace(/^([A-Za-z0-9_-]+\s*:\s*.+)$/gm, '<span class="ck-meta">$1</span>');
-  text = text.replace(/^(\s*-\s+.+)$/gm, '<span class="ck-meta">$1</span>');
-  text = text.replace(/^(&gt;&gt;\s*.+)$/gm, '<span class="ck-meta">$1</span>');
-  text = text.replace(/^(&gt;\s*.+)$/gm, '<span class="ck-meta">$1</span>');
-  text = text.replace(/^(=+\s*.*?=*\s*)$/gm, '<span class="ck-section">$1</span>');
-  // Single-pass for @, #, ~ tokens
-  const SRC_RE = /(@[^\s@#~{}]+(?:\s+[^\s@#~{}]+)*?\{[^}]*\}(?:\([^)]*\))?)|(&#64;[a-zA-Z\u00C0-\u024F][a-zA-Z0-9\u00C0-\u024F _-]*)|(@[a-zA-Z\u00C0-\u024F][a-zA-Z0-9\u00C0-\u024F _-]*)|(#[^\s@#~{}]+(?:\s+[^\s@#~{}]+)*?\{[^}]*\})|(#[a-zA-Z\u00C0-\u024F][a-zA-Z0-9\u00C0-\u024F _-]*)|(~[^\s@#~{}]*\{[^}]*\})/g;
-  text = text.replace(SRC_RE, (m, ingB, _skip, ingN, cwB, cwN, timer) => {
-    if (ingB) return '<span class="ck-ing">' + ingB + '</span>';
-    if (ingN) return '<span class="ck-ing">' + ingN + '</span>';
-    if (cwB) return '<span class="ck-cw">' + cwB + '</span>';
-    if (cwN) return '<span class="ck-cw">' + cwN + '</span>';
-    if (timer) return '<span class="ck-timer">' + timer + '</span>';
-    return m;
-  });
-  return text;
-}
-
-// ---- Shopping list ----
-async function updateShoppingList() {
-  const container = document.getElementById('shoppingContent');
-  const actionsEl = document.getElementById('shoppingActions');
-  const ids = [...selectedIds];
-
-  if (ids.length === 0) {
-    lastShoppingData = null;
-    actionsEl.style.display = 'none';
-    container.innerHTML = '<div class="shopping-empty"><div class="icon">🧺</div><p>Select recipes to generate<br>a combined shopping list</p></div>';
-    return;
-  }
-
-  container.innerHTML = '<div class="shopping-empty"><p style="font-style:italic;">Loading…</p></div>';
-  const data = await fetchCombined(ids);
-  lastShoppingData = data;
-  actionsEl.style.display = 'flex';
-
-  let html = '';
-  if (data.recipes && data.recipes.length) {
-    html += '<div class="selected-recipes-list">';
-    for (const title of data.recipes) html += `<span class="shopping-recipe-tag">${esc(title)}</span>`;
-    html += '</div>';
-  }
-  for (const ing of data.ingredients) {
-    const qty = [ing.quantity, ing.unit].filter(Boolean).join(' ');
-    html += `<div class="shopping-item"><span class="qty">${esc(qty || '—')}</span><span class="name">${esc(ing.name)}</span></div>`;
-  }
-  container.innerHTML = html;
-}
-
-// ---- Auth & Admin mode ----
-let authStatus = { password_set: false, logged_in: false };
-
-async function checkAuth() {
-  try {
-    const res = await fetch('/api/auth/status');
-    authStatus = await res.json();
-  } catch { /* offline fallback */ }
-  updateAdminButton();
-}
-
-function getAdminModePreference() {
-  try {
-    return localStorage.getItem(ADMIN_MODE_PREF_KEY) === '1';
-  } catch {
-    return false;
-  }
-}
-
-function setAdminModePreference(enabled) {
-  try {
-    if (enabled) localStorage.setItem(ADMIN_MODE_PREF_KEY, '1');
-    else localStorage.removeItem(ADMIN_MODE_PREF_KEY);
-  } catch {
-    // Ignore storage failures.
-  }
-}
-
-function updateAdminButton() {
-  const btn = document.getElementById('adminToggle');
-  if (adminMode) {
-    btn.classList.add('active');
-    btn.innerHTML = authStatus.password_set ? '🔓 Admin (on)' : '✎ Admin (on)';
-  } else {
-    btn.classList.remove('active');
-    btn.innerHTML = authStatus.password_set ? '🔒 Admin' : '✎ Admin';
-  }
-}
-
-async function toggleAdmin() {
-  if (adminMode) {
-    // Turn off
-    adminMode = false;
-    setAdminModePreference(false);
-    updateAdminButton();
-    renderRecipeList();
-    if (activeId) viewRecipe(activeId, { replaceUrl: true });
-    const existingBtn = document.getElementById('addRecipeBtn');
-    if (existingBtn) existingBtn.remove();
-    toast('Admin mode off');
-    return;
-  }
-
-  // Turn on — check if we need a password
-  await checkAuth();
-
-  if (authStatus.password_set && !authStatus.logged_in) {
-    // Show login modal
-    document.getElementById('loginPassword').value = '';
-    document.getElementById('loginError').style.display = 'none';
-    document.getElementById('loginModal').classList.add('visible');
-    setTimeout(() => document.getElementById('loginPassword').focus(), 100);
-    return;
-  }
-
-  // No password or already logged in — activate directly
-  activateAdmin();
-}
-
-function activateAdmin() {
-  adminMode = true;
-  setAdminModePreference(true);
-  updateAdminButton();
-  renderRecipeList();
-  if (activeId) viewRecipe(activeId, { replaceUrl: true });
-  addNewRecipeButton();
-  toast('Admin mode on — click ✎ Edit on recipes or add new ones');
-}
-
-async function submitLogin() {
-  const pw = document.getElementById('loginPassword').value;
-  const errEl = document.getElementById('loginError');
-
-  const res = await fetch('/api/auth/login', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ password: pw }),
-  });
-
-  if (res.ok) {
-    authStatus.logged_in = true;
-    closeLogin();
-    activateAdmin();
-  } else {
-    errEl.textContent = 'Wrong password. Please try again.';
-    errEl.style.display = 'block';
-    document.getElementById('loginPassword').select();
-  }
-}
-
-function closeLogin() {
-  document.getElementById('loginModal').classList.remove('visible');
-}
-
-async function adminLogout() {
-  await fetch('/api/auth/logout', { method: 'POST' });
-  authStatus.logged_in = false;
-  adminMode = false;
-  setAdminModePreference(false);
-  updateAdminButton();
-  renderRecipeList();
-  if (activeId) viewRecipe(activeId, { replaceUrl: true });
-  const existingBtn = document.getElementById('addRecipeBtn');
-  if (existingBtn) existingBtn.remove();
-  toast('Logged out');
-}
-
-function addNewRecipeButton() {
-  if (document.getElementById('addRecipeBtn')) return;
-  const sh = document.querySelector('.sidebar-header');
-  const btn = document.createElement('button');
-  btn.id = 'addRecipeBtn';
-  btn.className = 'btn btn-primary';
-  btn.style.cssText = 'width:100%;margin-top:0.5rem;font-size:0.82rem;padding:0.4rem;';
-  btn.textContent = '+ Add Recipe';
-  btn.onclick = openNewRecipe;
-  sh.appendChild(btn);
-}
-
-function openNewRecipe() {
-  document.getElementById('editId').value = '';
-  document.getElementById('fieldTitle').value = '';
-  document.getElementById('fieldCategory').value = '';
-  document.getElementById('fieldDescription').value = '';
-  document.getElementById('fieldSource').value = '';
-  document.getElementById('modalTitle').textContent = 'Add Recipe';
-  document.getElementById('saveBtn').textContent = 'Save Recipe';
-  document.getElementById('deleteWrap').style.display = 'none';
-  document.getElementById('adminModal').classList.add('visible');
-}
-
-async function openEditRecipe(id) {
-  const data = await fetchRecipeDetail(id);
-  document.getElementById('editId').value = id;
-  document.getElementById('fieldTitle').value = data.title;
-  document.getElementById('fieldCategory').value = data.category || '';
-  document.getElementById('fieldDescription').value = data.description || '';
-  document.getElementById('fieldSource').value = data.source;
-  document.getElementById('modalTitle').textContent = 'Edit Recipe';
-  document.getElementById('saveBtn').textContent = 'Update Recipe';
-  document.getElementById('deleteWrap').style.display = 'block';
-  document.getElementById('adminModal').classList.add('visible');
-}
-
-function closeAdmin() {
-  document.getElementById('adminModal').classList.remove('visible');
-}
-
-async function saveRecipe() {
-  const id = document.getElementById('editId').value;
-  const body = {
-    title: document.getElementById('fieldTitle').value,
-    category: document.getElementById('fieldCategory').value,
-    description: document.getElementById('fieldDescription').value,
-    source: document.getElementById('fieldSource').value,
-  };
-
-  if (!body.source.trim()) {
-    toast('Source is required');
-    return;
-  }
-
-  const url = id ? `/api/recipes/${id}` : '/api/recipes';
-  const method = id ? 'PUT' : 'POST';
-
-  const res = await fetch(url, {
-    method, headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  });
-
-  if (res.ok) {
-    const data = await res.json();
-    toast(id ? 'Recipe updated' : 'Recipe created');
-    closeAdmin();
-    await fetchRecipes();
-    viewRecipe(data.id);
-  } else if (res.status === 401) {
-    toast('Session expired — please log in again');
-    adminMode = false;
-    authStatus.logged_in = false;
-    setAdminModePreference(false);
-    updateAdminButton();
-  } else {
-    const err = await res.json();
-    toast('Error: ' + (err.error || 'Unknown'));
-  }
-}
-
-async function deleteRecipe() {
-  const id = document.getElementById('editId').value;
-  if (!id) return;
-  if (!confirm('Delete this recipe permanently?')) return;
-
-  const res = await fetch(`/api/recipes/${id}`, { method: 'DELETE' });
-  if (res.ok) {
-    toast('Recipe deleted');
-    closeAdmin();
-    const deletedId = parseInt(id, 10);
-    selectedIds.delete(deletedId);
-    await fetchRecipes();
-    updateShoppingList();
-    updateCartBadge();
-    if (activeId === deletedId) {
-      clearRecipeSelection({ syncUrl: true, replaceUrl: true });
-    } else {
-      renderRecipeList();
-    }
-    renderTimerDock();
-    refreshActiveRecipeTimerUI();
-  } else if (res.status === 401) {
-    toast('Session expired — please log in again');
-    adminMode = false;
-    authStatus.logged_in = false;
-    setAdminModePreference(false);
-    updateAdminButton();
-  }
-}
-
-// ---- Mobile drawers ----
-function toggleSidebar() {
-  document.getElementById('sidebar').classList.toggle('open');
-  document.getElementById('overlay').classList.toggle('visible');
-}
-function toggleCart() {
-  document.getElementById('shoppingPanel').classList.toggle('open');
-  document.getElementById('overlay').classList.toggle('visible');
-}
-function closeDrawers() {
-  document.getElementById('sidebar').classList.remove('open');
-  document.getElementById('shoppingPanel').classList.remove('open');
-  document.getElementById('overlay').classList.remove('visible');
-}
-
-function esc(s) {
-  if (!s) return '';
-  const div = document.createElement('div');
-  div.textContent = s;
-  return div.innerHTML;
-}
-
-function formatMetaValue(value) {
-  if (Array.isArray(value)) return value.join(', ');
-  if (value === null || value === undefined) return '';
-  return String(value);
-}
-
-async function initApp() {
-  await fetchRecipes();
-  restoreTimersFromStorage();
-  await checkAuth();
-  if (getAdminModePreference()) {
-    if (!authStatus.password_set || authStatus.logged_in) {
-      activateAdmin();
-    } else {
-      setAdminModePreference(false);
-    }
-  }
-  await syncSelectionFromUrl();
-  renderTimerDock();
-}
-
-initApp();
+})();

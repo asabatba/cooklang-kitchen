@@ -1,139 +1,353 @@
 <!DOCTYPE html>
 <html lang="en">
-
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Cooklang Kitchen</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link
-    href="https://fonts.googleapis.com/css2?family=Lora:ital,wght@0,400;0,500;0,600;0,700;1,400;1,500&family=Libre+Baskerville:ital,wght@0,400;0,700;1,400&family=JetBrains+Mono:wght@400;500&display=swap"
-    rel="stylesheet">
-  <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}">
-</head>
-
-<body>
-  <header>
-    <button type="button" class="menu-toggle" onclick="toggleSidebar()" aria-label="Menu">☰</button>
-    <h1>Cooklang <span>Kitchen</span></h1>
-    <div class="header-tag">recipe viewer</div>
-    <div class="header-spacer"></div>
-    <button type="button" class="header-btn" id="adminToggle" onclick="toggleAdmin()">
-      ✎ Admin
-    </button>
-    <div class="cart-toggle-wrap">
-      <button type="button" class="header-btn" onclick="toggleCart()" style="position:relative;">
-        🛒 List
-        <span class="badge" id="cartBadge">0</span>
-      </button>
-    </div>
-  </header>
-
-  <div class="overlay" id="overlay" onclick="closeDrawers()"></div>
-
-  <div class="app-layout">
-    <!-- Sidebar -->
-    <aside class="sidebar" id="sidebar">
-      <div class="sidebar-header">
-        <h2>Recipes</h2>
-        <input type="text" class="search-box" placeholder="Search recipes…" oninput="filterRecipes(this.value)">
-      </div>
-      <div id="recipeList"></div>
-    </aside>
-
-    <!-- Main -->
-    <main class="main-content" id="mainContent">
-      <div class="empty-state">
-        <div class="icon">📖</div>
-        <h2>Choose a recipe</h2>
-        <p>Select a recipe from the sidebar to view it,<br>or check multiple to build a shopping list.</p>
-      </div>
-    </main>
-
-    <!-- Shopping panel -->
-    <aside class="shopping-panel" id="shoppingPanel">
-      <div class="shopping-header">
-        <h2>Shopping List <span class="badge-inline" id="shoppingBadge" style="display:none;">0</span></h2>
-        <p class="shopping-subtitle">Check recipes to combine ingredients</p>
-        <div class="shopping-actions" id="shoppingActions" style="display:none;">
-          <button type="button" class="action-btn" onclick="copyShoppingList()">📋 Copy</button>
-          <button type="button" class="action-btn" onclick="exportShoppingList('txt')">↓ .txt</button>
-          <button type="button" class="action-btn" onclick="exportShoppingList('md')">↓ .md</button>
-        </div>
-      </div>
-      <div id="shoppingContent">
-        <div class="shopping-empty">
-          <div class="icon">🧺</div>
-          <p>Select recipes to generate<br>a combined shopping list</p>
-        </div>
-      </div>
-    </aside>
-  </div>
-
-  <div id="timerDock" class="timer-dock"></div>
-
-  <!-- Admin modal -->
-  <div class="modal-overlay" id="adminModal">
-    <div class="modal">
-      <div class="modal-header">
-        <h2 id="modalTitle">Add Recipe</h2>
-        <button type="button" class="modal-close" onclick="closeAdmin()">&times;</button>
-      </div>
-      <div class="modal-body">
-        <input type="hidden" id="editId">
-        <div class="form-row">
-          <div class="form-group">
-            <label>Title (optional if in metadata)</label>
-            <input type="text" class="form-input" id="fieldTitle" placeholder="My Recipe">
-          </div>
-          <div class="form-group">
-            <label>Category</label>
-            <input type="text" class="form-input" id="fieldCategory" placeholder="Mains">
-          </div>
-        </div>
-        <div class="form-group">
-          <label>Description</label>
-          <input type="text" class="form-input" id="fieldDescription" placeholder="A brief description…">
-        </div>
-        <div class="form-group">
-          <label>Cooklang Source</label>
-          <textarea class="form-input" id="fieldSource"
-            placeholder=">> servings: 4&#10;&#10;Cook @pasta{200%g} in a #pot{} for ~{10%minutes}."></textarea>
-          <p class="form-hint">Use Cooklang syntax: @ingredient{qty%unit}, #cookware{}, ~{time%unit}, >> metadata</p>
-        </div>
-      </div>
-      <div class="modal-footer">
-        <div id="deleteWrap" style="margin-right:auto;display:none;">
-          <button type="button" class="btn btn-danger" onclick="deleteRecipe()">Delete recipe</button>
-        </div>
-        <button type="button" class="btn btn-secondary" onclick="closeAdmin()">Cancel</button>
-        <button type="button" class="btn btn-primary" id="saveBtn" onclick="saveRecipe()">Save Recipe</button>
-      </div>
-    </div>
-  </div>
-
-  <!-- Login modal -->
-  <div class="modal-overlay" id="loginModal">
-    <div class="modal" style="max-width:380px;">
-      <div class="modal-header">
-        <h2>Admin Login</h2>
-        <button type="button" class="modal-close" onclick="closeLogin()">&times;</button>
-      </div>
-      <div class="modal-body">
-        <div class="form-group">
-          <label>Password</label>
-          <input type="password" class="form-input" id="loginPassword" placeholder="Enter admin password…"
-            onkeydown="if(event.key==='Enter') submitLogin()">
-        </div>
-        <p id="loginError" style="color:#C0392B;font-size:0.8rem;margin-top:0.35rem;display:none;"></p>
-      </div>
-      <div class="modal-footer">
-        <button type="button" class="btn btn-secondary" onclick="closeLogin()">Cancel</button>
-        <button type="button" class="btn btn-primary" onclick="submitLogin()">Log in</button>
-      </div>
-    </div>
-  </div>
+  <style>[x-cloak]{display:none!important;}</style>
+  <script>
+    (function () {
+      try {
+        const storedTheme = localStorage.getItem('cooklang_theme');
+        const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+        const theme = (storedTheme === 'light' || storedTheme === 'dark')
+          ? storedTheme
+          : (prefersDark ? 'dark' : 'light');
+        if (theme === 'dark') document.documentElement.classList.add('dark');
+        else document.documentElement.classList.remove('dark');
+      } catch {
+        const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+        if (prefersDark) document.documentElement.classList.add('dark');
+        else document.documentElement.classList.remove('dark');
+      }
+    })();
+  </script>
+  <script>
+    window.__APP_CONFIG__ = {{ app_config|tojson }};
+  </script>
+  <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
   <script src="{{ url_for('static', filename='js/app.js') }}" defer></script>
-</body>
+  <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+</head>
+<body class="min-h-screen bg-gradient-to-br from-amber-50 via-stone-100 to-orange-100 text-stone-900 antialiased dark:from-zinc-950 dark:via-stone-950 dark:to-zinc-900 dark:text-stone-100">
+  <div x-data="kitchenApp()" x-init="init()" class="min-h-screen">
+    <header class="sticky top-0 z-40 border-b border-amber-200/70 bg-stone-50/85 px-3 py-3 backdrop-blur-lg dark:border-stone-700/70 dark:bg-zinc-950/80">
+      <div class="mx-auto flex max-w-[1600px] items-center gap-3">
+        <button @click="ui.sidebarOpen = !ui.sidebarOpen" class="rounded-lg border border-amber-300/80 bg-white/85 px-2.5 py-1.5 text-sm shadow-sm transition hover:bg-amber-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/60 dark:border-stone-600 dark:bg-zinc-900/80 dark:hover:bg-zinc-800 xl:hidden">☰</button>
+        <div>
+          <h1 class="font-serif text-lg font-semibold tracking-tight">Cooklang <span class="text-amber-600 dark:text-amber-400">Kitchen</span></h1>
+          <p class="text-[11px] uppercase tracking-[0.18em] text-stone-500 dark:text-stone-400">recipe viewer</p>
+        </div>
+        <div class="ml-auto flex gap-2 text-xs">
+          <label class="flex items-center gap-1.5 rounded-lg border border-amber-300/80 bg-white/85 px-2 py-1.5 text-stone-700 shadow-sm dark:border-stone-600 dark:bg-zinc-900/80 dark:text-stone-200">
+            <span class="hidden sm:inline">Language</span>
+            <select x-model="ui.language" @change="changeLanguage($event.target.value)" class="bg-transparent text-xs focus:outline-none dark:bg-zinc-900/0">
+              <template x-for="lang in translationLanguages" :key="lang.code">
+                <option :value="lang.code" x-text="lang.label"></option>
+              </template>
+            </select>
+          </label>
+          <button @click="toggleTheme()" class="rounded-lg border border-amber-300/80 bg-white/85 px-2.5 py-1.5 text-stone-700 shadow-sm transition hover:bg-amber-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/60 dark:border-stone-600 dark:bg-zinc-900/80 dark:text-stone-200 dark:hover:bg-zinc-800">
+            <span x-text="ui.theme === 'dark' ? 'Light' : 'Dark'"></span>
+          </button>
+          <button @click="toggleAdmin()" class="rounded-lg border border-amber-300/80 bg-white/85 px-2.5 py-1.5 text-stone-700 shadow-sm transition hover:bg-amber-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/60 dark:border-stone-600 dark:bg-zinc-900/80 dark:text-stone-200 dark:hover:bg-zinc-800" :class="adminMode ? 'border-amber-600 bg-amber-600 text-white hover:bg-amber-500 dark:border-amber-500 dark:bg-amber-500 dark:text-zinc-900' : ''">
+            <span x-text="adminMode ? 'Admin On' : 'Admin'"></span>
+          </button>
+          <button @click="ui.cartOpen = !ui.cartOpen" class="relative rounded-lg border border-amber-300/80 bg-white/85 px-2.5 py-1.5 text-stone-700 shadow-sm transition hover:bg-amber-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/60 dark:border-stone-600 dark:bg-zinc-900/80 dark:text-stone-200 dark:hover:bg-zinc-800 xl:hidden">
+            List
+            <span x-show="selectedCount > 0" x-cloak x-text="selectedCount" class="absolute -right-1.5 -top-1.5 rounded-full bg-amber-600 px-1 text-[10px] text-white dark:bg-amber-500 dark:text-zinc-900"></span>
+          </button>
+        </div>
+      </div>
+    </header>
 
+    <div x-show="ui.sidebarOpen || ui.cartOpen" x-cloak @click="closeDrawers()" class="fixed inset-0 z-30 bg-stone-950/35 backdrop-blur-sm xl:hidden dark:bg-black/55"></div>
+
+    <div class="mx-auto grid max-w-[1600px] grid-cols-1 xl:grid-cols-[320px_minmax(0,1fr)_340px]">
+      <aside :class="ui.sidebarOpen ? 'translate-x-0' : '-translate-x-full xl:translate-x-0'" class="fixed left-0 top-[58px] z-40 h-[calc(100vh-58px)] w-[320px] border-r border-amber-200/70 bg-stone-50/80 shadow-xl shadow-amber-100/40 backdrop-blur-xl transition-transform duration-300 dark:border-stone-700/60 dark:bg-zinc-950/85 dark:shadow-none xl:sticky xl:translate-x-0">
+        <div class="sticky top-0 border-b border-amber-200/70 bg-stone-50/90 p-3 backdrop-blur dark:border-stone-700/60 dark:bg-zinc-950/90">
+          <h2 class="text-[11px] font-semibold uppercase tracking-[0.18em] text-stone-500 dark:text-stone-400">Recipes</h2>
+          <input x-model.debounce.200ms="searchFilter" type="text" placeholder="Search..." class="mt-2 w-full rounded-xl border border-amber-200 bg-white/90 px-3 py-2 text-sm text-stone-800 shadow-sm placeholder:text-stone-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/60 dark:border-stone-700 dark:bg-zinc-900/80 dark:text-stone-100 dark:placeholder:text-stone-500">
+          <button x-show="adminMode" x-cloak @click="openNewRecipe()" class="mt-2 w-full rounded-xl border border-amber-600 bg-amber-600 px-3 py-2 text-sm font-medium text-white shadow-sm transition hover:bg-amber-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/70 dark:border-amber-500 dark:bg-amber-500 dark:text-zinc-900 dark:hover:bg-amber-400">+ Add Recipe</button>
+          <button x-show="adminMode" x-cloak @click="openTranslationsAdmin()" class="mt-2 w-full rounded-xl border border-emerald-600 bg-emerald-600 px-3 py-2 text-sm font-medium text-white shadow-sm transition hover:bg-emerald-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/70 dark:border-emerald-500 dark:bg-emerald-500 dark:text-zinc-900 dark:hover:bg-emerald-400">Update Translations</button>
+        </div>
+        <div class="h-[calc(100%-109px)] overflow-y-auto py-2">
+          <template x-if="filteredRecipesByCategory.length === 0">
+            <p class="px-3 py-4 text-sm text-stone-500 dark:text-stone-400">No recipes found.</p>
+          </template>
+          <template x-for="[category, items] in filteredRecipesByCategory" :key="category">
+            <section class="mb-2">
+              <h3 class="px-3 text-[11px] font-semibold uppercase tracking-[0.18em] text-stone-500 dark:text-stone-400" x-text="category"></h3>
+              <template x-for="recipe in items" :key="recipe.id">
+                <article class="mx-2 mt-1.5 flex gap-2.5 rounded-xl border border-transparent bg-white/65 p-2.5 shadow-sm shadow-amber-100/40 transition hover:border-amber-300/70 hover:bg-white dark:bg-zinc-900/55 dark:hover:border-stone-500/70 dark:hover:bg-zinc-900" :class="recipe.id === activeId ? 'border-amber-300 bg-amber-50/90 dark:border-amber-500/60 dark:bg-zinc-800/95' : ''">
+                  <button @click.stop="toggleSelect(recipe.id)" class="mt-0.5 h-4 w-4 rounded border border-amber-300/90 text-[10px] text-amber-700 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/60 dark:border-stone-600 dark:text-stone-300" :class="isSelected(recipe.id) ? 'border-emerald-600 bg-emerald-600 text-white dark:border-emerald-500 dark:bg-emerald-500 dark:text-zinc-900' : ''">✓</button>
+                  <button @click="loadActiveRecipe(recipe.id)" class="min-w-0 flex-1 rounded text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/50">
+                    <p class="truncate text-sm font-medium" x-text="recipe.title"></p>
+                    <p class="truncate text-xs text-stone-500 dark:text-stone-400" x-text="recipe.description || ''"></p>
+                  </button>
+                </article>
+              </template>
+            </section>
+          </template>
+        </div>
+      </aside>
+
+      <main class="min-h-[calc(100vh-58px)] p-4 md:p-6" :class="hasAnyTimers ? 'pb-56' : ''">
+        <template x-if="activeLoading"><div class="mx-auto max-w-4xl rounded-2xl border border-amber-200/70 bg-white/80 px-4 py-16 text-center text-stone-500 shadow-sm dark:border-stone-700/60 dark:bg-zinc-900/70 dark:text-stone-400">Loading recipe...</div></template>
+        <template x-if="activeError"><div class="mx-auto max-w-4xl rounded-2xl border border-red-300/80 bg-red-100/60 p-4 text-sm text-red-800 dark:border-red-500/60 dark:bg-red-950/45 dark:text-red-200" x-text="activeError"></div></template>
+        <template x-if="!activeLoading && !activeError && !activeData">
+          <div class="grid h-[58vh] place-items-center text-center">
+            <div class="rounded-3xl border border-amber-200/70 bg-white/70 px-8 py-10 shadow-sm dark:border-stone-700/60 dark:bg-zinc-900/70">
+              <p class="text-4xl">📖</p>
+              <h2 class="mt-3 font-serif text-2xl">Choose a recipe</h2>
+              <p class="mt-2 text-sm text-stone-500 dark:text-stone-400">Pick from the sidebar or build a shopping list.</p>
+            </div>
+          </div>
+        </template>
+
+        <template x-if="activeData">
+          <article class="mx-auto max-w-4xl space-y-5">
+            <div class="rounded-2xl border border-amber-200/70 bg-white/75 p-4 shadow-sm dark:border-stone-700/60 dark:bg-zinc-900/75">
+              <div class="flex flex-wrap items-start gap-3">
+                <div class="min-w-0 flex-1">
+                  <h2 class="font-serif text-3xl font-semibold tracking-tight" x-text="activeData.title"></h2>
+                  <p x-show="activeData.description" class="mt-1 text-sm italic text-stone-600 dark:text-stone-300" x-text="activeData.description"></p>
+                </div>
+                <div class="flex flex-wrap gap-1.5 text-xs">
+                  <button @click="copyRecipe('text')" class="rounded-lg border border-amber-300/80 bg-white/85 px-2.5 py-1.5 text-stone-700 shadow-sm transition hover:bg-amber-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/60 dark:border-stone-600 dark:bg-zinc-900/80 dark:text-stone-200 dark:hover:bg-zinc-800">Copy</button>
+                  <button @click="exportRecipe('cook')" class="rounded-lg border border-amber-300/80 bg-white/85 px-2.5 py-1.5 text-stone-700 shadow-sm transition hover:bg-amber-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/60 dark:border-stone-600 dark:bg-zinc-900/80 dark:text-stone-200 dark:hover:bg-zinc-800">.cook</button>
+                  <button @click="exportRecipe('md')" class="rounded-lg border border-amber-300/80 bg-white/85 px-2.5 py-1.5 text-stone-700 shadow-sm transition hover:bg-amber-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/60 dark:border-stone-600 dark:bg-zinc-900/80 dark:text-stone-200 dark:hover:bg-zinc-800">.md</button>
+                  <button @click="exportRecipe('txt')" class="rounded-lg border border-amber-300/80 bg-white/85 px-2.5 py-1.5 text-stone-700 shadow-sm transition hover:bg-amber-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/60 dark:border-stone-600 dark:bg-zinc-900/80 dark:text-stone-200 dark:hover:bg-zinc-800">.txt</button>
+                  <button x-show="adminMode" x-cloak @click="openEditRecipe(activeData.id)" class="rounded-lg border border-amber-600 bg-amber-600 px-2.5 py-1.5 text-white shadow-sm transition hover:bg-amber-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/70 dark:border-amber-500 dark:bg-amber-500 dark:text-zinc-900 dark:hover:bg-amber-400">Edit</button>
+                </div>
+              </div>
+            </div>
+
+            <div x-show="Object.keys(activeData.parsed.metadata || {}).length" class="flex flex-wrap gap-1.5 text-xs">
+              <template x-for="[k, v] in Object.entries(activeData.parsed.metadata || {})" :key="k">
+                <span class="rounded-lg border border-amber-200 bg-amber-50/75 px-2.5 py-1 text-stone-700 dark:border-stone-700 dark:bg-zinc-900 dark:text-stone-200"><strong x-text="k + ':'"></strong> <span x-text="formatMetaValue(v)"></span></span>
+              </template>
+            </div>
+
+            <section x-show="activeRecipeTimers.length" class="rounded-2xl border border-amber-200/70 bg-white/75 p-4 text-sm shadow-sm dark:border-stone-700/60 dark:bg-zinc-900/75">
+              <div class="mb-2 text-xs uppercase tracking-[0.12em] text-stone-500 dark:text-stone-400"><span x-text="activeRecipeTimers.length"></span> active timer(s)</div>
+              <template x-for="timer in activeRecipeTimers" :key="timer.timerId">
+                <div class="mb-1.5 flex justify-between rounded-xl border border-amber-200/70 bg-amber-50/70 px-2.5 py-1.5 text-xs dark:border-stone-700 dark:bg-zinc-900/80">
+                  <span><strong x-text="'Step ' + timer.stepNumber + ':'"></strong> <span x-text="timer.label"></span></span>
+                  <span class="font-mono" x-text="formatCountdownDisplay(getRemainingSeconds(timer))"></span>
+                </div>
+              </template>
+              <button @click="stopAllTimersForRecipe(activeData.id)" class="mt-1 rounded-lg border border-red-400/80 bg-red-50 px-2.5 py-1 text-xs text-red-700 transition hover:bg-red-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500/60 dark:border-red-500/60 dark:bg-red-950/40 dark:text-red-200 dark:hover:bg-red-950/70">Stop All</button>
+            </section>
+
+            <section x-show="activeData.parsed.notes && activeData.parsed.notes.length" class="rounded-2xl border border-amber-200/70 bg-white/75 p-4 shadow-sm dark:border-stone-700/60 dark:bg-zinc-900/75">
+              <h3 class="mb-2 border-b border-amber-200/70 pb-1.5 font-serif text-lg font-semibold dark:border-stone-700/60">Notes</h3>
+              <template x-for="(note, idx) in activeData.parsed.notes" :key="idx"><p class="text-sm italic text-stone-700 dark:text-stone-200" x-text="note.text"></p></template>
+            </section>
+
+            <section x-show="activeData.parsed.ingredients.length" class="rounded-2xl border border-amber-200/70 bg-white/75 p-4 shadow-sm dark:border-stone-700/60 dark:bg-zinc-900/75">
+              <h3 class="mb-3 border-b border-amber-200/70 pb-1.5 font-serif text-lg font-semibold dark:border-stone-700/60">Ingredients</h3>
+              <div class="grid gap-2 sm:grid-cols-2">
+                <template x-for="(ing, idx) in activeData.parsed.ingredients" :key="idx">
+                  <div class="rounded-xl border border-amber-200/70 bg-amber-50/70 px-3 py-2 text-sm shadow-sm shadow-amber-100/50 dark:border-stone-700 dark:bg-zinc-900/80 dark:shadow-none">
+                    <span class="font-mono text-xs text-amber-700 dark:text-amber-400" x-text="[ing.quantity, ing.unit].filter(Boolean).join(' ')"></span>
+                    <span class="ml-2" x-text="ing.name"></span>
+                    <span x-show="ing.preparation" class="text-xs italic text-stone-500 dark:text-stone-400" x-text="'(' + ing.preparation + ')'"></span>
+                  </div>
+                </template>
+              </div>
+            </section>
+
+            <section class="rounded-2xl border border-amber-200/70 bg-white/75 p-4 shadow-sm dark:border-stone-700/60 dark:bg-zinc-900/75">
+              <h3 class="mb-3 border-b border-amber-200/70 pb-1.5 font-serif text-lg font-semibold dark:border-stone-700/60">Method</h3>
+              <template x-for="entry in renderedSteps" :key="entry.index">
+                <div class="mb-2.5">
+                  <h4 x-show="entry.showSectionTitle" class="mb-1 text-sm font-semibold uppercase tracking-[0.12em] text-emerald-700 dark:text-emerald-400" x-text="entry.sectionTitle"></h4>
+                  <article class="rounded-xl border border-amber-200/70 bg-amber-50/45 p-3 dark:border-stone-700 dark:bg-zinc-900/70" :class="stepHasActiveTimer(activeData.id, entry.index) ? 'border-amber-400 bg-amber-100/70 dark:border-amber-500/70 dark:bg-amber-950/25' : (stepWasRecentlyCompleted(activeData.id, entry.index) ? 'border-emerald-400 bg-emerald-100/70 dark:border-emerald-500/70 dark:bg-emerald-950/25' : '')">
+                    <div class="flex gap-3">
+                      <span class="w-7 text-right text-stone-400" x-text="entry.stepNumber"></span>
+                      <div class="flex-1 text-sm leading-7" x-html="highlightStep(entry.step)"></div>
+                    </div>
+                    <div x-show="stepTimerRawCount(entry.step) > 0" class="mt-2 border-t border-dashed border-amber-200/80 pt-2 text-xs dark:border-stone-700">
+                      <template x-if="stepTimerDescriptors(activeData, entry.index).length === 0"><p class="text-stone-500 dark:text-stone-400">No valid timer duration.</p></template>
+                      <template x-if="stepTimerDescriptors(activeData, entry.index).length > 0 && !stepActiveTimer(activeData.id, entry.index)">
+                        <div class="flex flex-wrap items-center gap-1.5">
+                          <span class="rounded-md bg-emerald-700 px-1.5 py-0.5 text-[10px] uppercase tracking-[0.1em] text-white dark:bg-emerald-500 dark:text-zinc-900">Ready</span>
+                          <button @click="startStepTimer(entry.index)" class="rounded-lg border border-amber-300/80 bg-white/85 px-2.5 py-1 text-stone-700 transition hover:bg-amber-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/60 dark:border-stone-600 dark:bg-zinc-900/80 dark:text-stone-200 dark:hover:bg-zinc-800">Start Timer</button>
+                        </div>
+                      </template>
+                      <template x-if="stepActiveTimer(activeData.id, entry.index)">
+                        <div class="space-y-1">
+                          <p><span class="font-semibold" x-text="stepActiveTimer(activeData.id, entry.index).label"></span> <span class="font-mono" x-text="formatCountdownDisplay(getRemainingSeconds(stepActiveTimer(activeData.id, entry.index)))"></span></p>
+                          <div class="flex flex-wrap gap-1.5">
+                            <button x-show="stepActiveTimer(activeData.id, entry.index).status !== 'paused'" @click="pauseTimerById(stepActiveTimer(activeData.id, entry.index).timerId)" class="rounded-lg border border-amber-300/80 bg-white/85 px-2.5 py-1 text-stone-700 transition hover:bg-amber-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/60 dark:border-stone-600 dark:bg-zinc-900/80 dark:text-stone-200 dark:hover:bg-zinc-800">Pause</button>
+                            <button x-show="stepActiveTimer(activeData.id, entry.index).status === 'paused'" @click="resumeTimerById(stepActiveTimer(activeData.id, entry.index).timerId)" class="rounded-lg border border-amber-300/80 bg-white/85 px-2.5 py-1 text-stone-700 transition hover:bg-amber-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/60 dark:border-stone-600 dark:bg-zinc-900/80 dark:text-stone-200 dark:hover:bg-zinc-800">Resume</button>
+                            <button @click="skipTimerById(stepActiveTimer(activeData.id, entry.index).timerId)" class="rounded-lg border border-amber-300/80 bg-white/85 px-2.5 py-1 text-stone-700 transition hover:bg-amber-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/60 dark:border-stone-600 dark:bg-zinc-900/80 dark:text-stone-200 dark:hover:bg-zinc-800">Skip</button>
+                            <button @click="stopTimerById(stepActiveTimer(activeData.id, entry.index).timerId)" class="rounded-lg border border-red-400/80 bg-red-50 px-2.5 py-1 text-red-700 transition hover:bg-red-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500/60 dark:border-red-500/60 dark:bg-red-950/40 dark:text-red-200 dark:hover:bg-red-950/70">Stop</button>
+                          </div>
+                        </div>
+                      </template>
+                    </div>
+                  </article>
+                </div>
+              </template>
+            </section>
+
+            <section class="rounded-2xl border border-amber-200/70 bg-white/75 p-4 shadow-sm dark:border-stone-700/60 dark:bg-zinc-900/75">
+              <button @click="showSource = !showSource" class="rounded-lg border border-amber-300/80 bg-white/85 px-2.5 py-1.5 text-xs text-stone-700 transition hover:bg-amber-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/60 dark:border-stone-600 dark:bg-zinc-900/80 dark:text-stone-200 dark:hover:bg-zinc-800">&lt;/&gt; View source</button>
+              <pre x-show="showSource" class="mt-2 overflow-x-auto rounded-xl border border-zinc-800 bg-zinc-950 p-3 font-mono text-xs text-zinc-200" x-html="highlightSource(activeData.source)"></pre>
+            </section>
+          </article>
+        </template>
+      </main>
+
+      <aside :class="ui.cartOpen ? 'translate-x-0' : 'translate-x-full xl:translate-x-0'" class="fixed right-0 top-[58px] z-40 h-[calc(100vh-58px)] w-[340px] border-l border-amber-200/70 bg-stone-50/80 shadow-xl shadow-amber-100/40 backdrop-blur-xl transition-transform duration-300 dark:border-stone-700/60 dark:bg-zinc-950/85 dark:shadow-none xl:sticky xl:translate-x-0">
+        <div class="sticky top-0 border-b border-amber-200/70 bg-stone-50/90 p-3 backdrop-blur dark:border-stone-700/60 dark:bg-zinc-950/90">
+          <h2 class="text-[11px] font-semibold uppercase tracking-[0.18em] text-stone-500 dark:text-stone-400">Shopping List
+            <span x-show="selectedCount > 0" x-cloak class="ml-1 rounded-md bg-emerald-700 px-1.5 py-0.5 text-[10px] text-white dark:bg-emerald-500 dark:text-zinc-900" x-text="selectedCount"></span>
+          </h2>
+          <div x-show="hasShoppingData" x-cloak class="mt-2 flex gap-1.5 text-xs">
+            <button @click="copyShoppingList()" class="rounded-lg border border-amber-300/80 bg-white/85 px-2.5 py-1.5 text-stone-700 shadow-sm transition hover:bg-amber-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/60 dark:border-stone-600 dark:bg-zinc-900/80 dark:text-stone-200 dark:hover:bg-zinc-800">Copy</button>
+            <button @click="exportShoppingList('txt')" class="rounded-lg border border-amber-300/80 bg-white/85 px-2.5 py-1.5 text-stone-700 shadow-sm transition hover:bg-amber-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/60 dark:border-stone-600 dark:bg-zinc-900/80 dark:text-stone-200 dark:hover:bg-zinc-800">.txt</button>
+            <button @click="exportShoppingList('md')" class="rounded-lg border border-amber-300/80 bg-white/85 px-2.5 py-1.5 text-stone-700 shadow-sm transition hover:bg-amber-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/60 dark:border-stone-600 dark:bg-zinc-900/80 dark:text-stone-200 dark:hover:bg-zinc-800">.md</button>
+          </div>
+        </div>
+        <div class="h-[calc(100%-86px)] overflow-y-auto">
+          <template x-if="shoppingLoading"><p class="p-3 text-sm text-stone-500 dark:text-stone-400">Loading shopping list...</p></template>
+          <template x-if="!shoppingLoading && !hasShoppingData"><p class="p-4 text-sm text-stone-500 dark:text-stone-400">Select recipes to generate a shopping list.</p></template>
+          <template x-if="hasShoppingData">
+            <div>
+              <div x-show="lastShoppingData.recipes && lastShoppingData.recipes.length" class="flex flex-wrap gap-1.5 border-b border-amber-200/70 p-2 text-[11px] dark:border-stone-700/60">
+                <template x-for="title in lastShoppingData.recipes" :key="title"><span class="rounded-md border border-amber-200 bg-amber-50/75 px-2 py-0.5 text-stone-700 dark:border-stone-700 dark:bg-zinc-900 dark:text-stone-200" x-text="title"></span></template>
+              </div>
+              <template x-for="(ing, idx) in lastShoppingData.ingredients" :key="idx">
+                <div class="flex items-baseline gap-2 border-b border-amber-200/70 px-3 py-2 text-sm dark:border-stone-700/60">
+                  <span class="min-w-20 text-right font-mono text-xs text-amber-700 dark:text-amber-400" x-text="[ing.quantity, ing.unit].filter(Boolean).join(' ') || '—'"></span>
+                  <span x-text="ing.name"></span>
+                </div>
+              </template>
+            </div>
+          </template>
+        </div>
+      </aside>
+    </div>
+
+    <section x-show="hasAnyTimers" x-cloak class="fixed inset-x-0 bottom-0 z-30 px-2">
+      <div class="mx-auto max-w-5xl rounded-t-2xl border border-stone-700/80 bg-zinc-950/95 p-3 text-stone-100 shadow-2xl backdrop-blur">
+        <div class="mb-2 flex items-center gap-2 text-xs">
+          <button @click="ui.timerDockCollapsed = !ui.timerDockCollapsed" class="rounded-md border border-stone-600 bg-zinc-900/90 px-2 py-0.5 transition hover:bg-zinc-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/70" x-text="ui.timerDockCollapsed ? '▲' : '▼'"></button>
+          <span class="uppercase tracking-[0.12em] text-stone-300">Timers</span>
+          <span class="rounded-md bg-amber-500 px-1.5 py-0.5 font-medium text-zinc-900" x-text="timers.active.length"></span>
+        </div>
+        <div x-show="!ui.timerDockCollapsed" class="max-h-64 space-y-2 overflow-y-auto">
+          <template x-for="rt in sortedActiveTimers" :key="rt.timerId">
+            <article class="rounded-xl border border-stone-700 bg-zinc-900/90 p-2 text-xs">
+              <div class="mb-1 flex flex-wrap items-center gap-2">
+                <button x-show="recipeExists(rt.recipeId)" @click="loadActiveRecipe(rt.recipeId)" class="underline decoration-amber-400 decoration-2 underline-offset-2 transition hover:text-amber-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/70" x-text="rt.recipeTitle"></button>
+                <span x-show="!recipeExists(rt.recipeId)" x-text="rt.recipeTitle + ' (deleted)'" class="text-stone-400"></span>
+                <span class="text-stone-400" x-text="'Step ' + rt.stepNumber"></span>
+              </div>
+              <div class="mb-1 flex items-center justify-between"><span x-text="rt.label"></span><span class="font-mono" x-text="formatCountdownDisplay(getRemainingSeconds(rt))"></span></div>
+              <div class="flex flex-wrap gap-1.5">
+                <button x-show="rt.status !== 'paused'" @click="pauseTimerById(rt.timerId)" class="rounded-md border border-stone-600 bg-zinc-800 px-2 py-0.5 transition hover:bg-zinc-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/70">Pause</button>
+                <button x-show="rt.status === 'paused'" @click="resumeTimerById(rt.timerId)" class="rounded-md border border-stone-600 bg-zinc-800 px-2 py-0.5 transition hover:bg-zinc-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/70">Resume</button>
+                <button @click="skipTimerById(rt.timerId)" class="rounded-md border border-stone-600 bg-zinc-800 px-2 py-0.5 transition hover:bg-zinc-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/70">Skip</button>
+                <button @click="stopTimerById(rt.timerId)" class="rounded-md border border-red-500/70 bg-red-950/45 px-2 py-0.5 text-red-200 transition hover:bg-red-950/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500/70">Stop</button>
+              </div>
+            </article>
+          </template>
+          <template x-for="done in sortedCompletedTimers" :key="done.timerId + '-' + done.expiresAtMs">
+            <article class="rounded-xl border border-stone-700 bg-zinc-900/70 p-2 text-xs opacity-90">
+              <span class="mr-2 rounded-md bg-emerald-500 px-1.5 py-0.5 font-medium text-zinc-900" x-text="done.status === 'skipped' ? 'Skipped' : 'Done'"></span>
+              <span x-text="done.recipeTitle"></span>
+              <span class="text-stone-400" x-text="' • Step ' + done.stepNumber + ' • ' + done.label"></span>
+            </article>
+          </template>
+        </div>
+      </div>
+    </section>
+
+    <div x-show="ui.adminModalOpen" x-cloak @click.self="closeAdmin()" class="fixed inset-0 z-50 grid place-items-center bg-stone-950/45 p-4 backdrop-blur-sm dark:bg-black/60">
+      <div class="w-full max-w-2xl rounded-2xl border border-amber-200/70 bg-white/90 shadow-2xl dark:border-stone-700/60 dark:bg-zinc-900/90">
+        <div class="flex items-center justify-between border-b border-amber-200/70 p-4 dark:border-stone-700/60"><h2 class="font-serif text-lg font-semibold" x-text="adminForm.id ? 'Edit Recipe' : 'Add Recipe'"></h2><button @click="closeAdmin()" class="rounded-md border border-amber-300/80 bg-white/85 px-2 py-0.5 text-stone-700 transition hover:bg-amber-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/60 dark:border-stone-600 dark:bg-zinc-900/80 dark:text-stone-200 dark:hover:bg-zinc-800">&times;</button></div>
+        <div class="space-y-3 p-4 text-sm">
+          <div class="grid gap-2 sm:grid-cols-2">
+            <label class="font-medium text-stone-700 dark:text-stone-200">Title <input x-model="adminForm.title" type="text" class="mt-1 w-full rounded-xl border border-amber-200 bg-white/90 px-3 py-2 text-sm text-stone-800 shadow-sm placeholder:text-stone-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/60 dark:border-stone-700 dark:bg-zinc-900/80 dark:text-stone-100 dark:placeholder:text-stone-500"></label>
+            <label class="font-medium text-stone-700 dark:text-stone-200">Category <input x-model="adminForm.category" type="text" class="mt-1 w-full rounded-xl border border-amber-200 bg-white/90 px-3 py-2 text-sm text-stone-800 shadow-sm placeholder:text-stone-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/60 dark:border-stone-700 dark:bg-zinc-900/80 dark:text-stone-100 dark:placeholder:text-stone-500"></label>
+          </div>
+          <label class="font-medium text-stone-700 dark:text-stone-200">Description <input x-model="adminForm.description" type="text" class="mt-1 w-full rounded-xl border border-amber-200 bg-white/90 px-3 py-2 text-sm text-stone-800 shadow-sm placeholder:text-stone-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/60 dark:border-stone-700 dark:bg-zinc-900/80 dark:text-stone-100 dark:placeholder:text-stone-500"></label>
+          <label class="font-medium text-stone-700 dark:text-stone-200">Cooklang Source <textarea x-model="adminForm.source" rows="10" class="mt-1 w-full rounded-xl border border-amber-200 bg-white/90 px-3 py-2 font-mono text-xs text-stone-800 shadow-sm placeholder:text-stone-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/60 dark:border-stone-700 dark:bg-zinc-900/80 dark:text-stone-100 dark:placeholder:text-stone-500"></textarea></label>
+        </div>
+        <div class="flex items-center justify-end gap-2 border-t border-amber-200/70 p-4 text-xs dark:border-stone-700/60">
+          <button x-show="adminForm.id" @click="deleteRecipe()" class="mr-auto rounded-lg border border-red-400/80 bg-red-50 px-2.5 py-1.5 text-red-700 transition hover:bg-red-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500/60 dark:border-red-500/60 dark:bg-red-950/40 dark:text-red-200 dark:hover:bg-red-950/70">Delete</button>
+          <button @click="closeAdmin()" class="rounded-lg border border-amber-300/80 bg-white/85 px-2.5 py-1.5 text-stone-700 shadow-sm transition hover:bg-amber-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/60 dark:border-stone-600 dark:bg-zinc-900/80 dark:text-stone-200 dark:hover:bg-zinc-800">Cancel</button>
+          <button @click="saveRecipe()" class="rounded-lg border border-amber-600 bg-amber-600 px-2.5 py-1.5 text-white shadow-sm transition hover:bg-amber-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/70 dark:border-amber-500 dark:bg-amber-500 dark:text-zinc-900 dark:hover:bg-amber-400" x-text="adminForm.id ? 'Update Recipe' : 'Save Recipe'"></button>
+        </div>
+      </div>
+    </div>
+
+    <div x-show="ui.translationModalOpen" x-cloak @click.self="closeTranslationsAdmin()" class="fixed inset-0 z-50 grid place-items-center bg-stone-950/45 p-4 backdrop-blur-sm dark:bg-black/60">
+      <div class="w-full max-w-lg rounded-2xl border border-amber-200/70 bg-white/90 shadow-2xl dark:border-stone-700/60 dark:bg-zinc-900/90">
+        <div class="flex items-center justify-between border-b border-amber-200/70 p-4 dark:border-stone-700/60">
+          <h2 class="font-serif text-lg font-semibold">Update Translations</h2>
+          <button @click="closeTranslationsAdmin()" class="rounded-md border border-amber-300/80 bg-white/85 px-2 py-0.5 text-stone-700 transition hover:bg-amber-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/60 dark:border-stone-600 dark:bg-zinc-900/80 dark:text-stone-200 dark:hover:bg-zinc-800">&times;</button>
+        </div>
+        <div class="space-y-3 p-4 text-sm">
+          <label class="font-medium text-stone-700 dark:text-stone-200">Target language
+            <select x-model="translationAdmin.language" @change="loadMissingTranslations()" class="mt-1 w-full rounded-xl border border-amber-200 bg-white/90 px-3 py-2 text-sm text-stone-800 shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/60 dark:border-stone-700 dark:bg-zinc-900/80 dark:text-stone-100">
+              <template x-for="lang in nonEnglishTranslationLanguages" :key="lang.code">
+                <option :value="lang.code" x-text="lang.label"></option>
+              </template>
+            </select>
+          </label>
+          <div class="rounded-xl border border-amber-200/70 bg-amber-50/70 p-3 dark:border-stone-700 dark:bg-zinc-900/80">
+            <p class="text-xs uppercase tracking-[0.14em] text-stone-500 dark:text-stone-400">Missing terms</p>
+            <p class="mt-1 text-2xl font-semibold" x-text="translationAdmin.missing.total"></p>
+            <div class="mt-3 grid grid-cols-2 gap-2 text-xs">
+              <template x-for="[termType, count] in Object.entries(translationAdmin.missing.counts)" :key="termType">
+                <div class="rounded-lg border border-amber-200/70 bg-white/85 px-2.5 py-2 dark:border-stone-700 dark:bg-zinc-950/60">
+                  <p class="text-stone-500 dark:text-stone-400" x-text="translationAdmin.missing.labels[termType] || termType"></p>
+                  <p class="mt-1 font-semibold" x-text="count"></p>
+                </div>
+              </template>
+            </div>
+          </div>
+          <p x-show="translationAdmin.error" x-text="translationAdmin.error" class="text-xs text-red-700 dark:text-red-300"></p>
+          <template x-if="translationAdmin.lastResult">
+            <div class="rounded-xl border border-emerald-300/70 bg-emerald-50/80 p-3 text-xs text-emerald-900 dark:border-emerald-500/40 dark:bg-emerald-950/30 dark:text-emerald-200">
+              <p x-text="'Stored: ' + translationAdmin.lastResult.stored + ' across ' + translationAdmin.lastResult.batches + ' batch(es)'"></p>
+              <p x-text="'Fallback to English: ' + translationAdmin.lastResult.fallback_to_english"></p>
+            </div>
+          </template>
+        </div>
+        <div class="flex items-center justify-end gap-2 border-t border-amber-200/70 p-4 text-xs dark:border-stone-700/60">
+          <button @click="closeTranslationsAdmin()" class="rounded-lg border border-amber-300/80 bg-white/85 px-2.5 py-1.5 text-stone-700 shadow-sm transition hover:bg-amber-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/60 dark:border-stone-600 dark:bg-zinc-900/80 dark:text-stone-200 dark:hover:bg-zinc-800">Close</button>
+          <button @click="runTranslationUpdate()" :disabled="translationAdmin.loading || !translationAdmin.language" class="rounded-lg border border-emerald-600 bg-emerald-600 px-2.5 py-1.5 text-white shadow-sm transition hover:bg-emerald-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/70 disabled:cursor-not-allowed disabled:opacity-60 dark:border-emerald-500 dark:bg-emerald-500 dark:text-zinc-900 dark:hover:bg-emerald-400">
+            <span x-text="translationAdmin.loading ? 'Updating...' : 'Fill Missing Translations'"></span>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div x-show="ui.loginModalOpen" x-cloak @click.self="closeLogin()" class="fixed inset-0 z-50 grid place-items-center bg-stone-950/45 p-4 backdrop-blur-sm dark:bg-black/60">
+      <div class="w-full max-w-sm rounded-2xl border border-amber-200/70 bg-white/90 shadow-2xl dark:border-stone-700/60 dark:bg-zinc-900/90">
+        <div class="flex items-center justify-between border-b border-amber-200/70 p-4 dark:border-stone-700/60"><h2 class="font-serif text-lg font-semibold">Admin Login</h2><button @click="closeLogin()" class="rounded-md border border-amber-300/80 bg-white/85 px-2 py-0.5 text-stone-700 transition hover:bg-amber-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/60 dark:border-stone-600 dark:bg-zinc-900/80 dark:text-stone-200 dark:hover:bg-zinc-800">&times;</button></div>
+        <div class="space-y-2 p-4 text-sm">
+          <label class="font-medium text-stone-700 dark:text-stone-200">Password <input x-model="loginPassword" @keydown.enter.prevent="submitLogin()" type="password" class="mt-1 w-full rounded-xl border border-amber-200 bg-white/90 px-3 py-2 text-sm text-stone-800 shadow-sm placeholder:text-stone-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/60 dark:border-stone-700 dark:bg-zinc-900/80 dark:text-stone-100 dark:placeholder:text-stone-500"></label>
+          <p x-show="loginError" x-text="loginError" class="text-xs text-red-700 dark:text-red-300"></p>
+        </div>
+        <div class="flex justify-end gap-2 border-t border-amber-200/70 p-4 text-xs dark:border-stone-700/60">
+          <button @click="closeLogin()" class="rounded-lg border border-amber-300/80 bg-white/85 px-2.5 py-1.5 text-stone-700 shadow-sm transition hover:bg-amber-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/60 dark:border-stone-600 dark:bg-zinc-900/80 dark:text-stone-200 dark:hover:bg-zinc-800">Cancel</button>
+          <button @click="submitLogin()" class="rounded-lg border border-amber-600 bg-amber-600 px-2.5 py-1.5 text-white shadow-sm transition hover:bg-amber-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/70 dark:border-amber-500 dark:bg-amber-500 dark:text-zinc-900 dark:hover:bg-amber-400">Log in</button>
+        </div>
+      </div>
+    </div>
+
+    <section class="pointer-events-none fixed inset-x-0 bottom-2 z-[60] flex flex-col items-center gap-2 px-4">
+      <template x-for="toast in ui.toastQueue" :key="toast.id">
+        <div class="pointer-events-auto rounded-xl border border-amber-200/70 bg-white/90 px-3 py-2 text-xs text-stone-800 shadow-lg shadow-amber-100/50 backdrop-blur dark:border-stone-700/60 dark:bg-zinc-900/90 dark:text-stone-100 dark:shadow-none" x-text="toast.message"></div>
+      </template>
+    </section>
+  </div>
+</body>
 </html>

@@ -62,6 +62,9 @@ Environment variables:
 - `DATA_DIR`: base data directory (default: `./data`)
 - `DB_PATH`: SQLite DB path (default: `${DATA_DIR}/recipes.db`)
 - `PASSWORD_FILE`: admin password hash path (default: `${DATA_DIR}/.admin_password`)
+- `GEMINI_API_KEY`: API key for admin-triggered term translation updates
+- `GEMINI_MODEL`: Gemini model name for translations (default: `gemini-2.5-flash`)
+- `TRANSLATION_LANGUAGES`: comma-separated supported languages for the selector and admin sync (default: `en`)
 - `SESSION_COOKIE_SECURE`: set `true` behind HTTPS
 - `SESSION_COOKIE_SAMESITE`: cookie policy (default: `Lax`)
 - `SESSION_DAYS`: login session duration in days (default: `14`)
