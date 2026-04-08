@@ -1,0 +1,108 @@
+      <main class="min-h-[calc(100vh-58px)] p-4 md:p-6" :class="hasAnyTimers ? 'pb-56' : ''">
+        <template x-if="activeLoading"><div class="mx-auto max-w-4xl rounded-2xl border border-amber-200/70 bg-white/80 px-4 py-16 text-center text-stone-500 shadow-sm dark:border-stone-700/60 dark:bg-zinc-900/70 dark:text-stone-400">Loading recipe...</div></template>
+        <template x-if="activeError"><div class="mx-auto max-w-4xl rounded-2xl border border-red-300/80 bg-red-100/60 p-4 text-sm text-red-800 dark:border-red-500/60 dark:bg-red-950/45 dark:text-red-200" x-text="activeError"></div></template>
+        <template x-if="!activeLoading && !activeError && !activeData">
+          <div class="grid h-[58vh] place-items-center text-center">
+            <div class="rounded-3xl border border-amber-200/50 bg-white/60 px-10 py-12 shadow-sm dark:border-[#2e2416] dark:bg-[#1a1510]/60">
+              <p class="font-serif text-5xl font-light italic text-amber-300 dark:text-amber-800">k.</p>
+              <h2 class="mt-4 font-serif text-2xl font-semibold">Choose a recipe</h2>
+              <p class="mt-2 text-sm text-stone-400 dark:text-stone-600">Pick from the sidebar or build a shopping list.</p>
+            </div>
+          </div>
+        </template>
+
+        <template x-if="activeData">
+          <article class="mx-auto max-w-4xl space-y-4">
+            <div class="rounded-2xl border border-amber-200/50 bg-white/80 p-5 shadow-sm dark:border-[#2e2416] dark:bg-[#1a1510]/80">
+              <div class="flex flex-wrap items-start gap-3">
+                <div class="min-w-0 flex-1">
+                  <h2 class="font-serif text-3xl font-semibold leading-tight tracking-tight" x-text="activeData.title"></h2>
+                  <p x-show="activeData.description" class="mt-1.5 text-sm italic text-stone-500 dark:text-stone-400" x-text="activeData.description"></p>
+                </div>
+                <div class="flex flex-wrap gap-1.5 text-xs">
+                  <button type="button" @click="copyRecipe('text')" class="rounded-lg border border-stone-200 bg-stone-50 px-2.5 py-1.5 text-stone-600 shadow-sm transition hover:bg-stone-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/60 dark:border-[#3a2e1c] dark:bg-[#1e1810] dark:text-stone-300 dark:hover:bg-[#261e12]">Copy</button>
+                  <button type="button" @click="exportRecipe('cook')" class="rounded-lg border border-stone-200 bg-stone-50 px-2.5 py-1.5 text-stone-600 shadow-sm transition hover:bg-stone-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/60 dark:border-[#3a2e1c] dark:bg-[#1e1810] dark:text-stone-300 dark:hover:bg-[#261e12]">.cook</button>
+                  <button type="button" @click="exportRecipe('md')" class="rounded-lg border border-stone-200 bg-stone-50 px-2.5 py-1.5 text-stone-600 shadow-sm transition hover:bg-stone-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/60 dark:border-[#3a2e1c] dark:bg-[#1e1810] dark:text-stone-300 dark:hover:bg-[#261e12]">.md</button>
+                  <button type="button" @click="exportRecipe('txt')" class="rounded-lg border border-stone-200 bg-stone-50 px-2.5 py-1.5 text-stone-600 shadow-sm transition hover:bg-stone-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/60 dark:border-[#3a2e1c] dark:bg-[#1e1810] dark:text-stone-300 dark:hover:bg-[#261e12]">.txt</button>
+                  <button type="button" x-show="adminMode" x-cloak @click="openEditRecipe(activeData.id)" class="rounded-lg border border-amber-600 bg-amber-600 px-2.5 py-1.5 text-white shadow-sm transition hover:bg-amber-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/70">Edit</button>
+                </div>
+              </div>
+            </div>
+
+            <div x-show="Object.keys(activeData.parsed.metadata || {}).length" class="flex flex-wrap gap-1.5 text-xs">
+              <template x-for="[k, v] in Object.entries(activeData.parsed.metadata || {})" :key="k">
+                <span class="rounded-lg border border-amber-200/60 bg-amber-50/60 px-2.5 py-1 text-stone-600 dark:border-[#3a2e1c] dark:bg-[#1e1810] dark:text-stone-300"><strong class="text-stone-500 dark:text-stone-500" x-text="k + ':'"></strong> <span x-text="formatMetaValue(v)"></span></span>
+              </template>
+            </div>
+
+            <section x-show="activeRecipeTimers.length" class="rounded-2xl border border-amber-300/60 bg-amber-50/50 p-4 text-sm shadow-sm dark:border-[#5a3e10] dark:bg-[#1e1508]/60">
+              <div class="mb-2 text-xs font-medium uppercase tracking-[0.14em] text-amber-700 dark:text-amber-600"><span x-text="activeRecipeTimers.length"></span> active timer(s)</div>
+              <template x-for="timer in activeRecipeTimers" :key="timer.timerId">
+                <div class="mb-1.5 flex justify-between rounded-xl border border-amber-200/60 bg-white/70 px-2.5 py-1.5 text-xs dark:border-[#3a2e1c] dark:bg-[#1e1810]">
+                  <span><strong x-text="'Step ' + timer.stepNumber + ':'"></strong> <span x-text="timer.label"></span></span>
+                  <span class="font-mono tabular-nums" x-text="formatCountdownDisplay(getRemainingSeconds(timer))"></span>
+                </div>
+              </template>
+              <button type="button" @click="stopAllTimersForRecipe(activeData.id)" class="mt-1 rounded-lg border border-red-300/70 bg-red-50 px-2.5 py-1 text-xs text-red-600 transition hover:bg-red-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500/60 dark:border-red-800/60 dark:bg-red-950/30 dark:text-red-400 dark:hover:bg-red-950/60">Stop All</button>
+            </section>
+
+            <section x-show="activeData.parsed.notes && activeData.parsed.notes.length" class="rounded-2xl border border-amber-200/50 bg-white/80 p-5 shadow-sm dark:border-[#2e2416] dark:bg-[#1a1510]/80">
+              <h3 class="mb-3 border-b border-amber-100 pb-2 font-serif text-lg font-semibold dark:border-[#2e2416]">Notes</h3>
+              <template x-for="(note, idx) in activeData.parsed.notes" :key="idx"><p class="text-sm italic leading-relaxed text-stone-600 dark:text-stone-300" x-text="note.text"></p></template>
+            </section>
+
+            <section x-show="activeData.parsed.ingredients.length" class="rounded-2xl border border-amber-200/50 bg-white/80 p-5 shadow-sm dark:border-[#2e2416] dark:bg-[#1a1510]/80">
+              <h3 class="mb-3 border-b border-amber-100 pb-2 font-serif text-lg font-semibold dark:border-[#2e2416]">Ingredients</h3>
+              <div class="grid gap-1.5 sm:grid-cols-2">
+                <template x-for="(ing, idx) in activeData.parsed.ingredients" :key="idx">
+                  <div class="flex items-baseline gap-2 rounded-xl border border-amber-100 bg-amber-50/50 px-3 py-2 text-sm dark:border-[#3a2e1c] dark:bg-[#1e1810]">
+                    <span class="min-w-12 shrink-0 font-mono text-xs tabular-nums text-amber-600 dark:text-amber-500" x-text="[ing.quantity, ing.unit].filter(Boolean).join('\u00a0') || ''"></span>
+                    <span class="font-medium" x-text="ing.name"></span>
+                    <span x-show="ing.preparation" class="text-xs italic text-stone-400 dark:text-stone-600" x-text="'· ' + ing.preparation"></span>
+                  </div>
+                </template>
+              </div>
+            </section>
+
+            <section class="rounded-2xl border border-amber-200/50 bg-white/80 p-5 shadow-sm dark:border-[#2e2416] dark:bg-[#1a1510]/80">
+              <h3 class="mb-4 border-b border-amber-100 pb-2 font-serif text-lg font-semibold dark:border-[#2e2416]">Method</h3>
+              <template x-for="entry in renderedSteps" :key="entry.index">
+                <div class="mb-3">
+                  <h4 x-show="entry.showSectionTitle" class="mb-2 mt-1 text-xs font-semibold uppercase tracking-[0.16em] text-emerald-600 dark:text-emerald-500" x-text="entry.sectionTitle"></h4>
+                  <article class="rounded-xl border border-amber-100 bg-amber-50/30 p-3.5 dark:border-[#2e2416] dark:bg-[#1c1610]/60" :class="stepHasActiveTimer(activeData.id, entry.index) ? 'border-amber-400/80 bg-amber-100/60 dark:border-[#7a5010] dark:bg-[#241808]/80' : (stepWasRecentlyCompleted(activeData.id, entry.index) ? 'border-emerald-300/70 bg-emerald-50/60 dark:border-emerald-800/60 dark:bg-emerald-950/20' : '')">
+                    <div class="flex gap-3">
+                      <span class="step-num" x-text="entry.stepNumber"></span>
+                      <div class="flex-1 text-sm leading-7" x-html="highlightStep(entry.step)"></div>
+                    </div>
+                    <div x-show="stepTimerRawCount(entry.step) > 0" class="mt-2.5 border-t border-dashed border-amber-200/60 pt-2.5 text-xs dark:border-[#3a2e1c]">
+                      <template x-if="stepTimerDescriptors(activeData, entry.index).length === 0"><p class="text-stone-400 dark:text-stone-600">No valid timer duration.</p></template>
+                      <template x-if="stepTimerDescriptors(activeData, entry.index).length > 0 && !stepActiveTimer(activeData.id, entry.index)">
+                        <div class="flex flex-wrap items-center gap-1.5">
+                          <span class="rounded-md bg-emerald-600 px-1.5 py-0.5 text-[10px] uppercase tracking-[0.1em] text-white">Ready</span>
+                          <button type="button" @click="startStepTimer(entry.index)" class="rounded-lg border border-stone-200 bg-white px-2.5 py-1 text-stone-600 transition hover:bg-stone-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/60 dark:border-[#3a2e1c] dark:bg-[#1e1810] dark:text-stone-300 dark:hover:bg-[#261e12]">Start Timer</button>
+                        </div>
+                      </template>
+                      <template x-if="stepActiveTimer(activeData.id, entry.index)">
+                        <div class="space-y-1.5">
+                          <p class="font-medium"><span x-text="stepActiveTimer(activeData.id, entry.index).label"></span> <span class="font-mono tabular-nums text-amber-600 dark:text-amber-400" x-text="formatCountdownDisplay(getRemainingSeconds(stepActiveTimer(activeData.id, entry.index)))"></span></p>
+                          <div class="flex flex-wrap gap-1.5">
+                            <button type="button" x-show="stepActiveTimer(activeData.id, entry.index).status !== 'paused'" @click="pauseTimerById(stepActiveTimer(activeData.id, entry.index).timerId)" class="rounded-lg border border-stone-200 bg-white px-2.5 py-1 text-stone-600 transition hover:bg-stone-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/60 dark:border-[#3a2e1c] dark:bg-[#1e1810] dark:text-stone-300 dark:hover:bg-[#261e12]">Pause</button>
+                            <button type="button" x-show="stepActiveTimer(activeData.id, entry.index).status === 'paused'" @click="resumeTimerById(stepActiveTimer(activeData.id, entry.index).timerId)" class="rounded-lg border border-stone-200 bg-white px-2.5 py-1 text-stone-600 transition hover:bg-stone-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/60 dark:border-[#3a2e1c] dark:bg-[#1e1810] dark:text-stone-300 dark:hover:bg-[#261e12]">Resume</button>
+                            <button type="button" @click="skipTimerById(stepActiveTimer(activeData.id, entry.index).timerId)" class="rounded-lg border border-stone-200 bg-white px-2.5 py-1 text-stone-600 transition hover:bg-stone-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/60 dark:border-[#3a2e1c] dark:bg-[#1e1810] dark:text-stone-300 dark:hover:bg-[#261e12]">Skip</button>
+                            <button type="button" @click="stopTimerById(stepActiveTimer(activeData.id, entry.index).timerId)" class="rounded-lg border border-red-300/70 bg-red-50 px-2.5 py-1 text-red-600 transition hover:bg-red-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500/60 dark:border-red-800/60 dark:bg-red-950/30 dark:text-red-400 dark:hover:bg-red-950/60">Stop</button>
+                          </div>
+                        </div>
+                      </template>
+                    </div>
+                  </article>
+                </div>
+              </template>
+            </section>
+
+            <section class="rounded-2xl border border-amber-200/50 bg-white/80 p-5 shadow-sm dark:border-[#2e2416] dark:bg-[#1a1510]/80">
+              <button type="button" @click="showSource = !showSource" class="rounded-lg border border-stone-200 bg-stone-50 px-2.5 py-1.5 text-xs text-stone-500 transition hover:bg-stone-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/60 dark:border-[#3a2e1c] dark:bg-[#1e1810] dark:text-stone-500 dark:hover:bg-[#261e12]">&lt;/&gt; Source</button>
+              <pre x-show="showSource" class="mt-2.5 overflow-x-auto rounded-xl border border-[#1e1e1e] bg-[#0d0d0d] p-4 font-mono text-xs text-zinc-300" x-html="highlightSource(activeData.source)"></pre>
+            </section>
+          </article>
+        </template>
+      </main>
