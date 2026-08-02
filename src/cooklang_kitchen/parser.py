@@ -308,7 +308,7 @@ def _render_line(line: str, step_ingredients, step_cookware, step_timers):
     return rendered
 
 
-def _extract_title_description(metadata: dict) -> tuple[str | None, str | None]:
+def extract_title_description(metadata: dict) -> tuple[str | None, str | None]:
     title = metadata.get("title")
     if isinstance(title, list):
         title = ", ".join(str(v) for v in title)
@@ -330,7 +330,7 @@ def _extract_title_description(metadata: dict) -> tuple[str | None, str | None]:
 
 def extract_recipe_fields(source: str) -> dict[str, str | None]:
     parsed = parse(source)
-    title, description = _extract_title_description(parsed.metadata)
+    title, description = extract_title_description(parsed.metadata)
     return {"title": title, "description": description}
 
 

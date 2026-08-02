@@ -1,7 +1,7 @@
 from flask import Blueprint, jsonify, request
 
 from ..db import get_db_connection
-from ..parser import combine_ingredients, extract_recipe_fields, parse
+from ..parser import combine_ingredients, extract_recipe_fields, extract_title_description, parse
 from ..translations import (
     TranslationError,
     localize_combined_ingredients,
@@ -50,12 +50,13 @@ def get_recipe(recipe_id: int):
         return jsonify({"error": "Recipe not found"}), 404
 
     recipe_data = dict(row)
-    parsed_fields = extract_recipe_fields(recipe_data["source"])
+    parsed = parse(recipe_data["source"])
+    title, description = extract_title_description(parsed.metadata)
     if not (recipe_data.get("title") or "").strip():
-        recipe_data["title"] = parsed_fields.get("title") or "Untitled recipe"
+        recipe_data["title"] = title or "Untitled recipe"
     if not (recipe_data.get("description") or "").strip():
-        recipe_data["description"] = parsed_fields.get("description") or ""
-    recipe_data["parsed"] = localize_parsed_recipe(parse(recipe_data["source"]).to_dict(), language)
+        recipe_data["description"] = description or ""
+    recipe_data["parsed"] = localize_parsed_recipe(parsed.to_dict(), language)
     recipe_data["language"] = language
     return jsonify(recipe_data)
 
