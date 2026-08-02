@@ -561,6 +561,13 @@
       if (res.ok && body) this.authStatus = body;
     },
 
+    handleAuthExpired() {
+      this.adminMode = false;
+      this.authStatus.logged_in = false;
+      this.setAdminModePreference(false);
+      this.toast('Session expired - please log in again');
+    },
+
     getAdminModePreference() {
       try {
         return localStorage.getItem(ADMIN_MODE_PREF_KEY) === '1';
@@ -676,11 +683,8 @@
         return;
       }
       if (res.status === 401) {
-        this.adminMode = false;
-        this.authStatus.logged_in = false;
-        this.setAdminModePreference(false);
+        this.handleAuthExpired();
         this.closeTranslationsAdmin();
-        this.toast('Session expired - please log in again');
         return;
       }
       this.translationAdmin.error = (body && body.error) || 'Could not load missing translation counts';
@@ -707,11 +711,8 @@
         return;
       }
       if (res.status === 401) {
-        this.adminMode = false;
-        this.authStatus.logged_in = false;
-        this.setAdminModePreference(false);
+        this.handleAuthExpired();
         this.closeTranslationsAdmin();
-        this.toast('Session expired - please log in again');
         return;
       }
       this.translationAdmin.error = (body && body.error) || 'Translation update failed';
@@ -744,10 +745,7 @@
         return;
       }
       if (res.status === 401) {
-        this.adminMode = false;
-        this.authStatus.logged_in = false;
-        this.setAdminModePreference(false);
-        this.toast('Session expired - please log in again');
+        this.handleAuthExpired();
         return;
       }
       this.toast(`Error: ${(body && body.error) || 'Unknown'}`);
@@ -768,10 +766,7 @@
         return;
       }
       if (res.status === 401) {
-        this.adminMode = false;
-        this.authStatus.logged_in = false;
-        this.setAdminModePreference(false);
-        this.toast('Session expired - please log in again');
+        this.handleAuthExpired();
       }
     },
 
