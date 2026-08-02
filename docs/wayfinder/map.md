@@ -33,6 +33,7 @@ A scoped ticket backlog for cooklang-kitchen — bugs/issues, refactor & simplif
 - [Establish a test suite strategy](tickets/008-test-suite-strategy.md) — pytest, parser.py only for now (pure functions, highest value); manual verification of earlier tickets stays acceptable going forward, not a process gap. **Implemented and verified** — 32 tests in tests/test_parser.py, confirmed they actually catch regressions (deliberately broke qty/unit parsing, 5 tests failed, restored, all pass again).
 - [Decide next-feature direction](tickets/009-next-feature-direction.md) — priority order **search/discovery → meal planning → mobile/PWA**; richer authoring, recipe import, and multi-user/sharing deprioritized for now (not ruled out, just not next). Search/discovery graduated into [Design tags filter + ingredient search for the recipe browser](tickets/012-search-discovery.md); meal planning and mobile/PWA stay as ordered fog below, not yet sharp enough to ticket.
 - [Decide whether recipe title/description should be translatable](tickets/010-translate-title-description.md) — confirmed as a real gap, not intentional scope, but deferred: wasn't part of the feature-priority pass, no mechanism decided. Noted as fog rather than built.
+- [Fix --seed-if-missing never actually seeding on a fresh install](tickets/011-fix-seed-if-missing.md) — reordered `_cmd_run()` to check `db_path.exists()`/seed before `create_app()`, not after (seeding doesn't need an app context). **Implemented and verified** (cli.py) — reproduced the original bug, confirmed the fix, confirmed no-op behavior when the DB already exists, full test suite still passes.
 
 ## Not yet specified
 
@@ -63,5 +64,5 @@ A scoped ticket backlog for cooklang-kitchen — bugs/issues, refactor & simplif
 | 008 | [Establish a test suite strategy](tickets/008-test-suite-strategy.md) | grilling | closed | — |
 | 009 | [Decide next-feature direction](tickets/009-next-feature-direction.md) | grilling | closed | — |
 | 010 | [Decide whether recipe title/description should be translatable](tickets/010-translate-title-description.md) | grilling | closed | — |
-| 011 | [Fix --seed-if-missing never actually seeding on a fresh install](tickets/011-fix-seed-if-missing.md) | task | open | — |
+| 011 | [Fix --seed-if-missing never actually seeding on a fresh install](tickets/011-fix-seed-if-missing.md) | task | closed | — |
 | 012 | [Design tags filter + ingredient search for the recipe browser](tickets/012-search-discovery.md) | grilling | open | — |

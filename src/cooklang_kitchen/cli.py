@@ -26,11 +26,11 @@ def _remove_password() -> None:
 
 
 def _cmd_run(args: argparse.Namespace) -> None:
-    app = create_app()
-    db_path = Path(app.config["DB_PATH"])
+    db_path = Path(Config.DB_PATH)
     if args.seed_if_missing and not db_path.exists():
         create_db(db_path)
 
+    app = create_app()
     app.run(host=args.host, port=args.port, debug=args.debug)
 
 
