@@ -64,20 +64,33 @@ def get_recipe(recipe_id: int):
 @bp.post("/combine")
 def combine():
     data = request.get_json(silent=True) or {}
-    recipe_ids = data.get("ids", [])
+    raw_ids = data.get("ids", [])
     try:
         language = normalize_language_code(data.get("language", "en"))
     except TranslationError as exc:
         return jsonify({"error": str(exc)}), 400
 
-    if not recipe_ids:
+    counts: dict[int, int] = {}
+    for entry in raw_ids:
+        if not isinstance(entry, dict):
+            continue
+        try:
+            recipe_id = int(entry.get("id"))
+            count = int(entry.get("count", 1))
+        except (TypeError, ValueError):
+            continue
+        if count < 1:
+            continue
+        counts[recipe_id] = counts.get(recipe_id, 0) + count
+
+    if not counts:
         return jsonify({"ingredients": []})
 
     conn = get_db_connection()
-    placeholders = ",".join("?" * len(recipe_ids))
+    placeholders = ",".join("?" * len(counts))
     rows = conn.execute(
         f"SELECT id, title, source FROM recipes WHERE id IN ({placeholders})",
-        recipe_ids,
+        list(counts.keys()),
     ).fetchall()
     conn.close()
 
@@ -85,7 +98,9 @@ def combine():
     recipe_titles = []
     for row in rows:
         parsed = parse(row["source"])
-        all_ingredients.append([i.to_dict() for i in parsed.ingredients])
+        ingredient_dicts = [i.to_dict() for i in parsed.ingredients]
+        for _ in range(counts[row["id"]]):
+            all_ingredients.append(ingredient_dicts)
         recipe_titles.append(row["title"])
 
     combined = localize_combined_ingredients(combine_ingredients(all_ingredients), language)

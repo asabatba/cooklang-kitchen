@@ -3,6 +3,7 @@ from werkzeug.middleware.proxy_fix import ProxyFix
 
 from .api.admin import bp as admin_api_bp
 from .api.auth import bp as auth_api_bp
+from .api.meal_plan import bp as meal_plan_api_bp
 from .api.recipes import bp as recipes_api_bp
 from .api.translations import bp as translations_api_bp
 from .config import Config
@@ -26,4 +27,5 @@ def create_app() -> Flask:
     app.register_blueprint(recipes_api_bp)
     app.register_blueprint(admin_api_bp)
     app.register_blueprint(translations_api_bp)
+    app.register_blueprint(meal_plan_api_bp)
     return app

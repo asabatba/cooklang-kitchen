@@ -199,6 +199,18 @@ def ensure_schema() -> None:
         conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_term_translations_language ON term_translations(language_code)"
         )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS meal_plan_entries (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                date TEXT NOT NULL,
+                slot TEXT NOT NULL CHECK (slot IN ('lunch', 'dinner')),
+                recipe_id INTEGER NOT NULL REFERENCES recipes(id) ON DELETE CASCADE,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(date, slot)
+            )
+            """
+        )
 
         resync_term_catalog(conn)
         conn.commit()

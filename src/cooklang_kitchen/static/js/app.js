@@ -178,6 +178,25 @@
     return formatClock(sec);
   }
 
+  function pad2(n) { return String(n).padStart(2, '0'); }
+
+  function formatISODate(d) {
+    return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+  }
+
+  function parseISODateLocal(str) {
+    const [y, m, d] = String(str).split('-').map(Number);
+    return new Date(y, (m || 1) - 1, d || 1);
+  }
+
+  function mondayOfDate(d) {
+    const date = new Date(d);
+    const day = date.getDay();
+    const diff = (day === 0 ? -6 : 1) - day;
+    date.setDate(date.getDate() + diff);
+    return date;
+  }
+
   async function fetchJSON(url, options = {}) {
     const res = await fetch(url, options);
     let body = null;
@@ -192,7 +211,7 @@
   window.kitchenApp = () => ({
     translationLanguages: getTranslationLanguages(),
     recipes: [],
-    selectedIds: [],
+    selectedCounts: {},
     activeId: null,
     activeData: null,
     activeLoading: false,
@@ -214,6 +233,11 @@
     loginPassword: '',
     loginError: '',
     recipeLoadToken: 0,
+    planOpen: false,
+    planWeekStart: formatISODate(mondayOfDate(new Date())),
+    planEntries: {},
+    planLoading: false,
+    planPicker: { date: null, slot: null, search: '' },
     timers: { active: [], completed: [], tickHandle: null },
     ui: {
       sidebarOpen: false,
@@ -227,7 +251,7 @@
       language: 'en',
     },
 
-    get selectedCount() { return this.selectedIds.length; },
+    get selectedCount() { return Object.keys(this.selectedCounts).length; },
     get hasShoppingData() {
       return !!(this.lastShoppingData && Array.isArray(this.lastShoppingData.ingredients) && this.lastShoppingData.ingredients.length > 0);
     },
@@ -235,6 +259,44 @@
     get currentLanguage() { return this.ui.language || 'en'; },
     get nonEnglishTranslationLanguages() {
       return this.translationLanguages.filter((lang) => lang.code !== 'en');
+    },
+
+    get currentWeekDates() {
+      const start = parseISODateLocal(this.planWeekStart);
+      return Array.from({ length: 7 }, (_, i) => {
+        const d = new Date(start);
+        d.setDate(d.getDate() + i);
+        return formatISODate(d);
+      });
+    },
+
+    get planWeekLabel() {
+      const dates = this.currentWeekDates;
+      const start = parseISODateLocal(dates[0]);
+      const end = parseISODateLocal(dates[6]);
+      const startLabel = start.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+      const endLabel = end.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+      return `${startLabel} – ${endLabel}`;
+    },
+
+    get weekRecipeCounts() {
+      const counts = {};
+      for (const date of this.currentWeekDates) {
+        for (const slot of ['lunch', 'dinner']) {
+          const id = this.planEntries[this.planEntryKey(date, slot)];
+          if (!id) continue;
+          counts[id] = (counts[id] || 0) + 1;
+        }
+      }
+      return counts;
+    },
+
+    get planPickerResults() {
+      const term = (this.planPicker.search || '').trim().toLowerCase();
+      const list = term
+        ? this.recipes.filter((r) => (r.title || '').toLowerCase().includes(term) || (r.description || '').toLowerCase().includes(term))
+        : this.recipes;
+      return [...list].sort((a, b) => a.title.localeCompare(b.title));
     },
 
     get filteredRecipesByCategory() {
@@ -349,7 +411,7 @@
       this.ui.language = next;
       this.persistLanguage(next);
       if (this.activeId) await this.loadActiveRecipe(this.activeId, { syncUrl: false, closePanels: false });
-      if (this.selectedIds.length > 0) await this.updateShoppingList();
+      if (Object.keys(this.selectedCounts).length > 0) await this.updateShoppingList();
       this.toast(`Language set to ${next === 'en' ? 'English' : next.toUpperCase()}`);
     },
 
@@ -366,11 +428,13 @@
       this.ui.cartOpen = false;
     },
 
-    isSelected(id) { return this.selectedIds.includes(id); },
+    isSelected(id) { return !!this.selectedCounts[id]; },
 
     toggleSelect(id) {
-      if (this.isSelected(id)) this.selectedIds = this.selectedIds.filter((v) => v !== id);
-      else this.selectedIds = [...this.selectedIds, id];
+      const next = { ...this.selectedCounts };
+      if (next[id]) delete next[id];
+      else next[id] = 1;
+      this.selectedCounts = next;
       this.updateShoppingList();
     },
 
@@ -420,7 +484,11 @@
       const { res, body } = await fetchJSON('/api/recipes');
       if (!res.ok || !Array.isArray(body)) throw new Error('Could not load recipes');
       this.recipes = body;
-      this.selectedIds = this.selectedIds.filter((id) => this.recipeExists(id));
+      const nextCounts = {};
+      for (const [id, count] of Object.entries(this.selectedCounts)) {
+        if (this.recipeExists(Number(id))) nextCounts[id] = count;
+      }
+      this.selectedCounts = nextCounts;
     },
 
     clearRecipeSelection(options = {}) {
@@ -479,7 +547,8 @@
     },
 
     async updateShoppingList() {
-      if (this.selectedIds.length === 0) {
+      const entries = Object.entries(this.selectedCounts);
+      if (entries.length === 0) {
         this.lastShoppingData = null;
         this.shoppingLoading = false;
         return;
@@ -488,7 +557,10 @@
       const { res, body } = await fetchJSON('/api/combine', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ids: this.selectedIds, language: this.currentLanguage }),
+        body: JSON.stringify({
+          ids: entries.map(([id, count]) => ({ id: Number(id), count })),
+          language: this.currentLanguage,
+        }),
       });
       this.shoppingLoading = false;
       if (!res.ok || !body) {
@@ -497,6 +569,112 @@
       }
       this.lastShoppingData = body;
     },
+
+    planEntryKey(date, slot) { return `${date}_${slot}`; },
+
+    planRecipeFor(date, slot) {
+      const id = this.planEntries[this.planEntryKey(date, slot)];
+      return id ? this.recipes.find((r) => r.id === id) || null : null;
+    },
+
+    formatPlanDate(dateStr) {
+      const d = parseISODateLocal(dateStr);
+      return {
+        weekday: d.toLocaleDateString(undefined, { weekday: 'short' }),
+        display: d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }),
+      };
+    },
+
+    isToday(dateStr) { return dateStr === formatISODate(new Date()); },
+
+    async openPlanOverlay() {
+      this.planOpen = true;
+      this.closeDrawers();
+      await this.loadPlanWeek();
+    },
+
+    closePlanOverlay() {
+      this.planOpen = false;
+      this.closePlanPicker();
+    },
+
+    async changePlanWeek(deltaDays) {
+      const d = parseISODateLocal(this.planWeekStart);
+      d.setDate(d.getDate() + deltaDays);
+      this.planWeekStart = formatISODate(d);
+      await this.loadPlanWeek();
+    },
+
+    async goToCurrentWeek() {
+      this.planWeekStart = formatISODate(mondayOfDate(new Date()));
+      await this.loadPlanWeek();
+    },
+
+    async loadPlanWeek() {
+      this.planLoading = true;
+      const dates = this.currentWeekDates;
+      const { res, body } = await fetchJSON(`/api/meal-plan?start=${dates[0]}&end=${dates[6]}`);
+      this.planLoading = false;
+      if (!res.ok || !Array.isArray(body)) {
+        this.toast('Could not load meal plan');
+        return;
+      }
+      const entries = {};
+      for (const row of body) entries[this.planEntryKey(row.date, row.slot)] = row.recipe_id;
+      this.planEntries = entries;
+    },
+
+    openPlanPicker(date, slot) {
+      this.planPicker = { date, slot, search: '' };
+    },
+
+    closePlanPicker() {
+      this.planPicker = { date: null, slot: null, search: '' };
+    },
+
+    async assignPlanSlot(recipeId) {
+      const { date, slot } = this.planPicker;
+      if (!date || !slot) return;
+      const { res, body } = await fetchJSON(`/api/meal-plan/${date}/${slot}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ recipe_id: recipeId }),
+      });
+      if (!res.ok) {
+        if (res.status === 401) { this.handleAuthExpired(); return; }
+        this.toast((body && body.error) || 'Could not assign recipe');
+        return;
+      }
+      this.planEntries = { ...this.planEntries, [this.planEntryKey(date, slot)]: recipeId };
+      this.closePlanPicker();
+    },
+
+    async clearPlanSlot(date, slot) {
+      const { res, body } = await fetchJSON(`/api/meal-plan/${date}/${slot}`, { method: 'DELETE' });
+      if (!res.ok) {
+        if (res.status === 401) { this.handleAuthExpired(); return; }
+        this.toast((body && body.error) || 'Could not clear slot');
+        return;
+      }
+      const next = { ...this.planEntries };
+      delete next[this.planEntryKey(date, slot)];
+      this.planEntries = next;
+    },
+
+    async addWeekToShoppingList() {
+      const counts = this.weekRecipeCounts;
+      const ids = Object.keys(counts);
+      if (ids.length === 0) {
+        this.toast('No meals planned this week');
+        return;
+      }
+      const next = { ...this.selectedCounts };
+      for (const id of ids) next[id] = (next[id] || 0) + counts[id];
+      this.selectedCounts = next;
+      await this.updateShoppingList();
+      this.toast('Added this week to shopping list');
+    },
+
     recipeToText(data) { return formatRecipeArtifact(data, RECIPE_TEXT_FORMAT); },
 
     recipeToMarkdown(data) { return formatRecipeArtifact(data, RECIPE_MARKDOWN_FORMAT); },
@@ -708,7 +886,7 @@
         await this.loadMissingTranslations();
         if (this.currentLanguage === this.translationAdmin.language) {
           if (this.activeId) await this.loadActiveRecipe(this.activeId, { syncUrl: false, closePanels: false });
-          if (this.selectedIds.length > 0) await this.updateShoppingList();
+          if (Object.keys(this.selectedCounts).length > 0) await this.updateShoppingList();
         }
         this.toast(`Stored ${body.stored} translations for ${this.translationAdmin.language.toUpperCase()}`);
         return;
@@ -762,7 +940,9 @@
       if (res.ok) {
         this.toast('Recipe deleted');
         this.closeAdmin();
-        this.selectedIds = this.selectedIds.filter((v) => v !== Number(id));
+        const nextCounts = { ...this.selectedCounts };
+        delete nextCounts[id];
+        this.selectedCounts = nextCounts;
         await this.fetchRecipes();
         await this.updateShoppingList();
         if (this.activeId === Number(id)) this.clearRecipeSelection({ syncUrl: true, replaceUrl: true });

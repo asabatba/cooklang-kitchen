@@ -13,7 +13,7 @@
             <section class="mb-3">
               <h3 class="px-3 pb-1 pt-2 text-[10px] font-semibold uppercase tracking-[0.22em] text-stone-400 dark:text-stone-600" x-text="category"></h3>
               <template x-for="recipe in items" :key="recipe.id">
-                <article class="mx-2 mt-1 flex gap-2.5 rounded-xl border border-transparent bg-transparent p-2.5 transition-all duration-150 hover:border-amber-200 hover:bg-amber-50/60 dark:hover:border-[#3a2e1c] dark:hover:bg-[#1e1810]" :class="recipe.id === activeId ? 'border-amber-300/80 bg-amber-50/80 dark:border-[#5a3e20] dark:bg-[#241c10]' : ''">
+                <article class="mx-2 mt-1 flex gap-2.5 rounded-xl border p-2.5 transition-all duration-150 hover:border-amber-200 hover:bg-amber-50/60 dark:hover:border-[#3a2e1c] dark:hover:bg-[#1e1810]" :class="recipe.id === activeId ? 'border-amber-300/80 bg-amber-50/80 dark:border-[#5a3e20] dark:bg-[#241c10]' : 'border-transparent bg-transparent'">
                   <button type="button" @click.stop="toggleSelect(recipe.id)" class="mt-0.5 h-4 w-4 flex-shrink-0 rounded border border-amber-300/80 text-[10px] text-amber-700 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/60 dark:border-[#4a3a20] dark:text-stone-400" :class="isSelected(recipe.id) ? 'border-emerald-600 bg-emerald-600 text-white dark:border-emerald-600 dark:bg-emerald-600 dark:text-white' : ''">✓</button>
                   <button type="button" @click="loadActiveRecipe(recipe.id)" class="min-w-0 flex-1 rounded text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/50">
                     <p class="truncate text-sm font-medium leading-snug" x-text="recipe.title"></p>
