@@ -223,7 +223,7 @@
       this.restoreTimersFromStorage();
       await this.checkAuth();
       if (this.getAdminModePreference()) {
-        if (!this.authStatus.password_set || this.authStatus.logged_in) this.activateAdmin(false);
+        if (this.authStatus.password_set && this.authStatus.logged_in) this.activateAdmin(false);
         else this.setAdminModePreference(false);
       }
       await this.syncSelectionFromUrl();
@@ -586,7 +586,11 @@
         return;
       }
       await this.checkAuth();
-      if (this.authStatus.password_set && !this.authStatus.logged_in) {
+      if (!this.authStatus.password_set) {
+        this.toast('Set an admin password first: cooklang-kitchen set-password');
+        return;
+      }
+      if (!this.authStatus.logged_in) {
         this.loginPassword = '';
         this.loginError = '';
         this.ui.loginModalOpen = true;
@@ -604,13 +608,13 @@
     closeLogin() { this.ui.loginModalOpen = false; },
 
     async submitLogin() {
-      const { res } = await fetchJSON('/api/auth/login', {
+      const { res, body } = await fetchJSON('/api/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ password: this.loginPassword }),
       });
       if (!res.ok) {
-        this.loginError = 'Wrong password. Please try again.';
+        this.loginError = (body && body.error) || 'Wrong password. Please try again.';
         return;
       }
       this.authStatus.logged_in = true;

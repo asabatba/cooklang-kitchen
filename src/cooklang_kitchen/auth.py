@@ -16,7 +16,7 @@ def get_password_hash() -> str | None:
 def verify_password(password: str) -> bool:
     pw_hash = get_password_hash()
     if pw_hash is None:
-        return True
+        return False
     return check_password_hash(pw_hash, password)
 
 
@@ -24,7 +24,11 @@ def admin_required(func):
     @wraps(func)
     def decorated(*args, **kwargs):
         pw_hash = get_password_hash()
-        if pw_hash is not None and not session.get("admin"):
+        if pw_hash is None:
+            return jsonify(
+                {"error": "Admin password not configured. Run cooklang-kitchen set-password to enable admin actions."}
+            ), 503
+        if not session.get("admin"):
             return jsonify({"error": "Admin login required"}), 401
         return func(*args, **kwargs)
 
