@@ -32,6 +32,7 @@ A scoped ticket backlog for cooklang-kitchen — bugs/issues, refactor & simplif
 - [Extract shared recipe/shopping-list formatter logic in app.js](tickets/007-extract-recipe-shopping-formatters-appjs.md) — format-adapter objects + one shared builder per artifact type; found and fixed a latent `"# undefined"` heading bug along the way (can't occur in practice today). **Implemented and verified** (app.js) — equivalence-tested against the original output.
 - [Establish a test suite strategy](tickets/008-test-suite-strategy.md) — pytest, parser.py only for now (pure functions, highest value); manual verification of earlier tickets stays acceptable going forward, not a process gap. **Implemented and verified** — 32 tests in tests/test_parser.py, confirmed they actually catch regressions (deliberately broke qty/unit parsing, 5 tests failed, restored, all pass again).
 - [Decide next-feature direction](tickets/009-next-feature-direction.md) — priority order **search/discovery → meal planning → mobile/PWA**; richer authoring, recipe import, and multi-user/sharing deprioritized for now (not ruled out, just not next). Search/discovery graduated into [Design tags filter + ingredient search for the recipe browser](tickets/012-search-discovery.md); meal planning and mobile/PWA stay as ordered fog below, not yet sharp enough to ticket.
+- [Decide whether recipe title/description should be translatable](tickets/010-translate-title-description.md) — confirmed as a real gap, not intentional scope, but deferred: wasn't part of the feature-priority pass, no mechanism decided. Noted as fog rather than built.
 
 ## Not yet specified
 
@@ -61,6 +62,6 @@ A scoped ticket backlog for cooklang-kitchen — bugs/issues, refactor & simplif
 | 007 | [Extract shared recipe/shopping-list formatter logic in `app.js`](tickets/007-extract-recipe-shopping-formatters-appjs.md) | task | closed | — |
 | 008 | [Establish a test suite strategy](tickets/008-test-suite-strategy.md) | grilling | closed | — |
 | 009 | [Decide next-feature direction](tickets/009-next-feature-direction.md) | grilling | closed | — |
-| 010 | [Decide whether recipe title/description should be translatable](tickets/010-translate-title-description.md) | grilling | open | — |
+| 010 | [Decide whether recipe title/description should be translatable](tickets/010-translate-title-description.md) | grilling | closed | — |
 | 011 | [Fix --seed-if-missing never actually seeding on a fresh install](tickets/011-fix-seed-if-missing.md) | task | open | — |
 | 012 | [Design tags filter + ingredient search for the recipe browser](tickets/012-search-discovery.md) | grilling | open | — |
