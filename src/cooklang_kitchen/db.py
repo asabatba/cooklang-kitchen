@@ -13,4 +13,5 @@ def get_db_connection() -> sqlite3.Connection:
     ensure_data_dir()
     conn = sqlite3.connect(current_app.config["DB_PATH"])
     conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA foreign_keys = ON")
     return conn

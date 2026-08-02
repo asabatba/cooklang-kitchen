@@ -128,22 +128,36 @@ def upsert_term_catalog(conn, terms: Iterable[dict[str, str]]) -> None:
     )
 
 
-def sync_term_catalog_for_source(source: str, conn=None) -> None:
-    owns_connection = conn is None
-    conn = conn or get_db_connection()
-    try:
-        upsert_term_catalog(conn, collect_recipe_terms_from_source(source))
-        if owns_connection:
-            conn.commit()
-    finally:
-        if owns_connection:
-            conn.close()
+def resync_term_catalog(conn) -> None:
+    """
+    Recompute term_catalog from every recipe currently in the DB: upsert
+    every term still in use, then delete catalog rows no longer referenced
+    by any recipe. term_translations rows for deleted terms are removed via
+    the ON DELETE CASCADE FK (requires PRAGMA foreign_keys = ON, set by
+    get_db_connection()).
+    """
+    rows = conn.execute("SELECT source FROM recipes").fetchall()
+    terms_by_key: dict[tuple[str, str], dict[str, str]] = {}
+    for row in rows:
+        for term in collect_recipe_terms_from_source(row["source"]):
+            terms_by_key[(term["term_type"], term["source_key"])] = term
+
+    upsert_term_catalog(conn, terms_by_key.values())
+
+    catalog_rows = conn.execute("SELECT id, term_type, source_key FROM term_catalog").fetchall()
+    orphan_ids = [
+        catalog_row["id"]
+        for catalog_row in catalog_rows
+        if (catalog_row["term_type"], catalog_row["source_key"]) not in terms_by_key
+    ]
+    if orphan_ids:
+        placeholders = ",".join("?" * len(orphan_ids))
+        conn.execute(f"DELETE FROM term_catalog WHERE id IN ({placeholders})", orphan_ids)
 
 
 def ensure_schema() -> None:
     conn = get_db_connection()
     try:
-        conn.execute("PRAGMA foreign_keys = ON")
         conn.execute(
             """
             CREATE TABLE IF NOT EXISTS recipes (
@@ -187,9 +201,7 @@ def ensure_schema() -> None:
             "CREATE INDEX IF NOT EXISTS idx_term_translations_language ON term_translations(language_code)"
         )
 
-        rows = conn.execute("SELECT source FROM recipes").fetchall()
-        for row in rows:
-            upsert_term_catalog(conn, collect_recipe_terms_from_source(row["source"]))
+        resync_term_catalog(conn)
         conn.commit()
     finally:
         conn.close()
