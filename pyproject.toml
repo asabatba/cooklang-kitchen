@@ -31,3 +31,8 @@ cooklang_kitchen = [
   "static/css/*.css",
   "static/js/*.js",
 ]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+]

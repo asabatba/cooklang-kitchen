@@ -19,7 +19,7 @@ A scoped ticket backlog for cooklang-kitchen — bugs/issues, refactor & simplif
 - Whole app is in scope for this pass; nothing was pre-excluded (see "Out of scope").
 - Codebase is small (~3200 lines total) — surveyed directly by reading every source file rather than via subagents.
 - Consult `/grilling` and `/domain-modeling` when resolving tickets, as per default wayfinder practice.
-- Zero automated tests exist anywhere in the repo — keep this in mind when judging risk/priority of any ticket that touches the parser, auth, or translation sync logic.
+- `tests/test_parser.py` (pytest, `uv run pytest`) covers `parser.py`; `translations.py` and `auth.py` are still untested (need Flask app-context fixtures) — keep this in mind when judging risk/priority of any ticket touching those two files.
 
 ## Decisions so far
 
@@ -30,6 +30,7 @@ A scoped ticket backlog for cooklang-kitchen — bugs/issues, refactor & simplif
 - [Consolidate the three duplicated Cooklang tokenizer regexes](tickets/005-consolidate-cooklang-tokenizer-regex.md) — translations.py's STEP_TOKEN_RE now composes parser.py's patterns instead of an independent copy; app.js left as its own reimplementation (different language, not worth an API redesign today). **Implemented and verified** (translations.py). Found (not fixed, filed as [Fix --seed-if-missing never actually seeding](tickets/011-fix-seed-if-missing.md)) that `--seed-if-missing` is broken on a fresh install.
 - [Extract shared 401/session-expiry handling in app.js](tickets/006-extract-auth-expiry-handling-appjs.md) — single `handleAuthExpired()` method used by all 4 former duplicate sites. **Implemented and verified** (app.js).
 - [Extract shared recipe/shopping-list formatter logic in app.js](tickets/007-extract-recipe-shopping-formatters-appjs.md) — format-adapter objects + one shared builder per artifact type; found and fixed a latent `"# undefined"` heading bug along the way (can't occur in practice today). **Implemented and verified** (app.js) — equivalence-tested against the original output.
+- [Establish a test suite strategy](tickets/008-test-suite-strategy.md) — pytest, parser.py only for now (pure functions, highest value); manual verification of earlier tickets stays acceptable going forward, not a process gap. **Implemented and verified** — 32 tests in tests/test_parser.py, confirmed they actually catch regressions (deliberately broke qty/unit parsing, 5 tests failed, restored, all pass again).
 
 ## Not yet specified
 
@@ -55,7 +56,7 @@ A scoped ticket backlog for cooklang-kitchen — bugs/issues, refactor & simplif
 | 005 | [Consolidate the three duplicated Cooklang tokenizer regexes](tickets/005-consolidate-cooklang-tokenizer-regex.md) | grilling | closed | — |
 | 006 | [Extract shared 401/session-expiry handling in `app.js`](tickets/006-extract-auth-expiry-handling-appjs.md) | task | closed | — |
 | 007 | [Extract shared recipe/shopping-list formatter logic in `app.js`](tickets/007-extract-recipe-shopping-formatters-appjs.md) | task | closed | — |
-| 008 | [Establish a test suite strategy](tickets/008-test-suite-strategy.md) | grilling | open | — |
+| 008 | [Establish a test suite strategy](tickets/008-test-suite-strategy.md) | grilling | closed | — |
 | 009 | [Decide next-feature direction](tickets/009-next-feature-direction.md) | grilling | open | — |
 | 010 | [Decide whether recipe title/description should be translatable](tickets/010-translate-title-description.md) | grilling | open | — |
 | 011 | [Fix --seed-if-missing never actually seeding on a fresh install](tickets/011-fix-seed-if-missing.md) | task | open | — |
