@@ -34,6 +34,7 @@ A scoped ticket backlog for cooklang-kitchen — bugs/issues, refactor & simplif
 - [Decide next-feature direction](tickets/009-next-feature-direction.md) — priority order **search/discovery → meal planning → mobile/PWA**; richer authoring, recipe import, and multi-user/sharing deprioritized for now (not ruled out, just not next). Search/discovery graduated into [Design tags filter + ingredient search for the recipe browser](tickets/012-search-discovery.md); meal planning and mobile/PWA stay as ordered fog below, not yet sharp enough to ticket.
 - [Decide whether recipe title/description should be translatable](tickets/010-translate-title-description.md) — confirmed as a real gap, not intentional scope, but deferred: wasn't part of the feature-priority pass, no mechanism decided. Noted as fog rather than built.
 - [Fix --seed-if-missing never actually seeding on a fresh install](tickets/011-fix-seed-if-missing.md) — reordered `_cmd_run()` to check `db_path.exists()`/seed before `create_app()`, not after (seeding doesn't need an app context). **Implemented and verified** (cli.py) — reproduced the original bug, confirmed the fix, confirmed no-op behavior when the DB already exists, full test suite still passes.
+- [Design tags filter + ingredient search for the recipe browser](tickets/012-search-discovery.md) — tag chips in the sidebar (OR combination), ingredient names added to the list payload and filtered client-side (case-insensitive substring, same as title/description), no new admin UI for tags. **Spec only, not built** — full implementable spec written up on the ticket for a future session.
 
 ## Not yet specified
 
@@ -65,4 +66,4 @@ A scoped ticket backlog for cooklang-kitchen — bugs/issues, refactor & simplif
 | 009 | [Decide next-feature direction](tickets/009-next-feature-direction.md) | grilling | closed | — |
 | 010 | [Decide whether recipe title/description should be translatable](tickets/010-translate-title-description.md) | grilling | closed | — |
 | 011 | [Fix --seed-if-missing never actually seeding on a fresh install](tickets/011-fix-seed-if-missing.md) | task | closed | — |
-| 012 | [Design tags filter + ingredient search for the recipe browser](tickets/012-search-discovery.md) | grilling | open | — |
+| 012 | [Design tags filter + ingredient search for the recipe browser](tickets/012-search-discovery.md) | grilling | closed | — |
