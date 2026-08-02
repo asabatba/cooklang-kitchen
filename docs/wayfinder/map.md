@@ -31,10 +31,13 @@ A scoped ticket backlog for cooklang-kitchen — bugs/issues, refactor & simplif
 - [Extract shared 401/session-expiry handling in app.js](tickets/006-extract-auth-expiry-handling-appjs.md) — single `handleAuthExpired()` method used by all 4 former duplicate sites. **Implemented and verified** (app.js).
 - [Extract shared recipe/shopping-list formatter logic in app.js](tickets/007-extract-recipe-shopping-formatters-appjs.md) — format-adapter objects + one shared builder per artifact type; found and fixed a latent `"# undefined"` heading bug along the way (can't occur in practice today). **Implemented and verified** (app.js) — equivalence-tested against the original output.
 - [Establish a test suite strategy](tickets/008-test-suite-strategy.md) — pytest, parser.py only for now (pure functions, highest value); manual verification of earlier tickets stays acceptable going forward, not a process gap. **Implemented and verified** — 32 tests in tests/test_parser.py, confirmed they actually catch regressions (deliberately broke qty/unit parsing, 5 tests failed, restored, all pass again).
+- [Decide next-feature direction](tickets/009-next-feature-direction.md) — priority order **search/discovery → meal planning → mobile/PWA**; richer authoring, recipe import, and multi-user/sharing deprioritized for now (not ruled out, just not next). Search/discovery graduated into [Design tags filter + ingredient search for the recipe browser](tickets/012-search-discovery.md); meal planning and mobile/PWA stay as ordered fog below, not yet sharp enough to ticket.
 
 ## Not yet specified
 
-- **Concrete next-feature scope.** Once [Decide next-feature direction](tickets/009-next-feature-direction.md) picks a direction (e.g. meal planning, multi-user/sharing, recipe import from URL/photo, PWA/offline support, mobile-friendly gestures), that will graduate into its own feature ticket(s).
+- **Meal planning** (2nd feature priority, after search/discovery). No scope decided yet — what a "plan"/calendar entity looks like, how it ties into the existing shopping-list combiner.
+- **Mobile/PWA** (3rd feature priority). No scope decided yet — offline caching strategy, service worker, add-to-homescreen manifest.
+- **Deprioritized-for-now feature ideas**: richer Cooklang authoring (live preview, structured ingredient editor), recipe import (URL/photo → Cooklang), multi-user/sharing (accounts instead of one shared admin password). Not ruled out of the project — just not next; revisit if priorities shift.
 - **Deployment operational concerns.** Backup/persistence strategy for the SQLite data volume on CapRover, and whether any structured logging/monitoring is wanted — not explored deeply enough yet to phrase as a sharp question.
 - **Recipe collection scale behavior.** `list_recipes()` and `get_recipe()` re-parse Cooklang source on every request with no caching; fine at the current handful of seed recipes, but not yet clear whether/when this becomes worth addressing — revisit once the collection size or feature direction (e.g. bulk import) is known.
 - **Shared Tailwind class extraction.** Long, near-identical utility class strings repeat across every button in the templates (a DX/maintainability concern, not a user-facing bug). Worth revisiting only after [De-risk frontend CDN dependencies](tickets/004-derisk-frontend-cdn-dependencies.md) lands, since a build-step migration would be the natural place to introduce shared component classes.
@@ -57,6 +60,7 @@ A scoped ticket backlog for cooklang-kitchen — bugs/issues, refactor & simplif
 | 006 | [Extract shared 401/session-expiry handling in `app.js`](tickets/006-extract-auth-expiry-handling-appjs.md) | task | closed | — |
 | 007 | [Extract shared recipe/shopping-list formatter logic in `app.js`](tickets/007-extract-recipe-shopping-formatters-appjs.md) | task | closed | — |
 | 008 | [Establish a test suite strategy](tickets/008-test-suite-strategy.md) | grilling | closed | — |
-| 009 | [Decide next-feature direction](tickets/009-next-feature-direction.md) | grilling | open | — |
+| 009 | [Decide next-feature direction](tickets/009-next-feature-direction.md) | grilling | closed | — |
 | 010 | [Decide whether recipe title/description should be translatable](tickets/010-translate-title-description.md) | grilling | open | — |
 | 011 | [Fix --seed-if-missing never actually seeding on a fresh install](tickets/011-fix-seed-if-missing.md) | task | open | — |
+| 012 | [Design tags filter + ingredient search for the recipe browser](tickets/012-search-discovery.md) | grilling | open | — |
