@@ -8,6 +8,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,600;0,700;1,400&family=DM+Sans:opsz,wght@9..40,300;9..40,400;9..40,500;9..40,600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}">
   <style>
     body { font-family: 'DM Sans', system-ui, sans-serif; }
     /* Override Tailwind's font-serif utility with Playfair Display */
@@ -81,9 +82,10 @@
   <script>
     window.__APP_CONFIG__ = {{ app_config|tojson }};
   </script>
-  <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
   <script src="{{ url_for('static', filename='js/app.js') }}" defer></script>
-  <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.15.12/dist/cdn.min.js"
+          integrity="sha384-pb6hrQvo4s23cEUFtj0CZkzGE3jyK3pj26RIupXXxhSrrcUA/Cn0lZgcCrGH0t6L"
+          crossorigin="anonymous"></script>
 </head>
 <body class="min-h-screen bg-gradient-to-br from-stone-50 via-amber-50/40 to-orange-50/60 text-stone-900 antialiased dark:from-[#130f09] dark:via-[#1b1510] dark:to-[#110d08] dark:text-stone-100">
   <div x-data="kitchenApp()" x-init="init()" class="min-h-screen">

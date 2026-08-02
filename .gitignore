@@ -7,3 +7,4 @@ data/
 *.egg-info/
 build/
 dist/
+src/cooklang_kitchen/static/css/app.css

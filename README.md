@@ -43,6 +43,20 @@ cooklang-kitchen run --debug --seed-if-missing
 
 Open `http://localhost:5000`.
 
+### CSS
+
+Tailwind CSS is compiled ahead of time (no CDN, no Node.js needed) — download the
+[standalone Tailwind CLI](https://github.com/tailwindlabs/tailwindcss/releases/latest)
+for your platform once, then run it from the repo root:
+
+```bash
+./tailwindcss -i src/cooklang_kitchen/static/css/input.css -o src/cooklang_kitchen/static/css/app.css --watch
+```
+
+Leave it running while you work — `src/cooklang_kitchen/static/css/app.css` is
+gitignored and regenerated locally the same way the Docker build produces it, so
+the page has no styling until you run this at least once.
+
 ## CLI commands
 
 ```bash
