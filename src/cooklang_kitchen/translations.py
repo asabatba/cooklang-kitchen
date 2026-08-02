@@ -7,7 +7,7 @@ from typing import Any
 from flask import current_app
 
 from .db import get_db_connection
-from .parser import parse
+from .parser import COOKWARE_RE, INGREDIENT_RE, TIMER_RE, parse
 
 TERM_INGREDIENT = "ingredient"
 TERM_COOKWARE = "cookware"
@@ -31,13 +31,12 @@ TERM_TYPE_LABELS = {
     TERM_PREPARATION: "Preparation",
 }
 
-STEP_TOKEN_RE = re.compile(
-    r"@([^@#~{}\s]+(?:\s+[^@#~{}\s]+)*?)\{([^}]*)\}(?:\(([^)]*)\))?"
-    r"|@([a-zA-Z\u00C0-\u024F][a-zA-Z0-9\u00C0-\u024F _-]*)"
-    r"|#([^@#~{}\s]+(?:\s+[^@#~{}\s]+)*?)\{([^}]*)\}(?:\(([^)]*)\))?"
-    r"|#([a-zA-Z\u00C0-\u024F][a-zA-Z0-9\u00C0-\u024F _-]*)"
-    r"|~([^@#~{}\s]*)\{([^}]*)\}"
-)
+# Composed from parser.py's compiled patterns (the source of truth for the
+# Cooklang token grammar) rather than an independent copy, so the two never
+# drift. _render_localized_step_text() below only inspects match.group(0)'s
+# leading character, not numbered groups, so the exact group layout doesn't
+# matter here.
+STEP_TOKEN_RE = re.compile(f"{INGREDIENT_RE.pattern}|{COOKWARE_RE.pattern}|{TIMER_RE.pattern}")
 
 
 class TranslationError(RuntimeError):

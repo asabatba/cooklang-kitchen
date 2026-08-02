@@ -27,6 +27,7 @@ A scoped ticket backlog for cooklang-kitchen — bugs/issues, refactor & simplif
 - [Fix duplicate Cooklang parse in GET /api/recipes/{id}](tickets/001-fix-duplicate-parse-get-recipe.md) — parse once, reuse for both title/description fallback and the full parsed structure; `list_recipes()` left untouched (already single-parse). **Implemented and verified** (parser.py, api/recipes.py).
 - [Clean up orphaned term_catalog entries on recipe edit/delete](tickets/002-orphaned-term-catalog-cleanup.md) — full-recompute-and-prune on every write + startup, no schema change; also fixed a latent bug where `get_db_connection()` never enabled `PRAGMA foreign_keys = ON`, so the `term_translations` cascade delete was never actually firing. **Implemented and verified** (db.py, translations.py, api/admin.py).
 - [De-risk frontend CDN dependencies](tickets/004-derisk-frontend-cdn-dependencies.md) — real Tailwind CLI build (standalone binary, multi-stage Docker, no Node in runtime image) replacing the Play CDN; Alpine.js pinned to an exact version with an SRI hash. **Implemented and verified** (input.css, Dockerfile, index.html, .gitignore, README) — full Docker image built and run via podman to confirm.
+- [Consolidate the three duplicated Cooklang tokenizer regexes](tickets/005-consolidate-cooklang-tokenizer-regex.md) — translations.py's STEP_TOKEN_RE now composes parser.py's patterns instead of an independent copy; app.js left as its own reimplementation (different language, not worth an API redesign today). **Implemented and verified** (translations.py). Found (not fixed, filed as [Fix --seed-if-missing never actually seeding](tickets/011-fix-seed-if-missing.md)) that `--seed-if-missing` is broken on a fresh install.
 
 ## Not yet specified
 
@@ -49,9 +50,10 @@ A scoped ticket backlog for cooklang-kitchen — bugs/issues, refactor & simplif
 | 002 | [Clean up orphaned `term_catalog` entries on recipe edit/delete](tickets/002-orphaned-term-catalog-cleanup.md) | grilling | closed | — |
 | 003 | [Harden the admin surface](tickets/003-harden-admin-surface.md) | grilling | closed | — |
 | 004 | [De-risk frontend CDN dependencies](tickets/004-derisk-frontend-cdn-dependencies.md) | grilling | closed | — |
-| 005 | [Consolidate the three duplicated Cooklang tokenizer regexes](tickets/005-consolidate-cooklang-tokenizer-regex.md) | grilling | open | — |
+| 005 | [Consolidate the three duplicated Cooklang tokenizer regexes](tickets/005-consolidate-cooklang-tokenizer-regex.md) | grilling | closed | — |
 | 006 | [Extract shared 401/session-expiry handling in `app.js`](tickets/006-extract-auth-expiry-handling-appjs.md) | task | open | — |
 | 007 | [Extract shared recipe/shopping-list formatter logic in `app.js`](tickets/007-extract-recipe-shopping-formatters-appjs.md) | task | open | — |
 | 008 | [Establish a test suite strategy](tickets/008-test-suite-strategy.md) | grilling | open | — |
 | 009 | [Decide next-feature direction](tickets/009-next-feature-direction.md) | grilling | open | — |
 | 010 | [Decide whether recipe title/description should be translatable](tickets/010-translate-title-description.md) | grilling | open | — |
+| 011 | [Fix --seed-if-missing never actually seeding on a fresh install](tickets/011-fix-seed-if-missing.md) | task | open | — |
