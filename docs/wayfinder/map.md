@@ -29,6 +29,7 @@ A scoped ticket backlog for cooklang-kitchen — bugs/issues, refactor & simplif
 - [De-risk frontend CDN dependencies](tickets/004-derisk-frontend-cdn-dependencies.md) — real Tailwind CLI build (standalone binary, multi-stage Docker, no Node in runtime image) replacing the Play CDN; Alpine.js pinned to an exact version with an SRI hash. **Implemented and verified** (input.css, Dockerfile, index.html, .gitignore, README) — full Docker image built and run via podman to confirm.
 - [Consolidate the three duplicated Cooklang tokenizer regexes](tickets/005-consolidate-cooklang-tokenizer-regex.md) — translations.py's STEP_TOKEN_RE now composes parser.py's patterns instead of an independent copy; app.js left as its own reimplementation (different language, not worth an API redesign today). **Implemented and verified** (translations.py). Found (not fixed, filed as [Fix --seed-if-missing never actually seeding](tickets/011-fix-seed-if-missing.md)) that `--seed-if-missing` is broken on a fresh install.
 - [Extract shared 401/session-expiry handling in app.js](tickets/006-extract-auth-expiry-handling-appjs.md) — single `handleAuthExpired()` method used by all 4 former duplicate sites. **Implemented and verified** (app.js).
+- [Extract shared recipe/shopping-list formatter logic in app.js](tickets/007-extract-recipe-shopping-formatters-appjs.md) — format-adapter objects + one shared builder per artifact type; found and fixed a latent `"# undefined"` heading bug along the way (can't occur in practice today). **Implemented and verified** (app.js) — equivalence-tested against the original output.
 
 ## Not yet specified
 
@@ -53,7 +54,7 @@ A scoped ticket backlog for cooklang-kitchen — bugs/issues, refactor & simplif
 | 004 | [De-risk frontend CDN dependencies](tickets/004-derisk-frontend-cdn-dependencies.md) | grilling | closed | — |
 | 005 | [Consolidate the three duplicated Cooklang tokenizer regexes](tickets/005-consolidate-cooklang-tokenizer-regex.md) | grilling | closed | — |
 | 006 | [Extract shared 401/session-expiry handling in `app.js`](tickets/006-extract-auth-expiry-handling-appjs.md) | task | closed | — |
-| 007 | [Extract shared recipe/shopping-list formatter logic in `app.js`](tickets/007-extract-recipe-shopping-formatters-appjs.md) | task | open | — |
+| 007 | [Extract shared recipe/shopping-list formatter logic in `app.js`](tickets/007-extract-recipe-shopping-formatters-appjs.md) | task | closed | — |
 | 008 | [Establish a test suite strategy](tickets/008-test-suite-strategy.md) | grilling | open | — |
 | 009 | [Decide next-feature direction](tickets/009-next-feature-direction.md) | grilling | open | — |
 | 010 | [Decide whether recipe title/description should be translatable](tickets/010-translate-title-description.md) | grilling | open | — |

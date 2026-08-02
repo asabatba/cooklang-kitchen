@@ -24,6 +24,71 @@
     return String(value);
   }
 
+  const RECIPE_TEXT_FORMAT = {
+    heading: (text) => text.toUpperCase(),
+    subtitle: (text) => text,
+    metaLine: (k, v) => `${k}: ${v}`,
+    sectionHeading: (text) => text.toUpperCase(),
+    listItem: (text) => `  ${text}`,
+    numberedItem: (n, text) => `  ${n}. ${text}`,
+  };
+
+  const RECIPE_MARKDOWN_FORMAT = {
+    heading: (text) => `# ${text}`,
+    subtitle: (text) => `*${text}*`,
+    metaLine: (k, v) => `**${k}:** ${v}  `,
+    sectionHeading: (text) => `## ${text}`,
+    listItem: (text) => `- ${text}`,
+    numberedItem: (n, text) => `${n}. ${text}`,
+  };
+
+  function formatRecipeArtifact(data, fmt) {
+    const p = data.parsed;
+    const lines = [];
+    lines.push(fmt.heading(data.title || ''));
+    if (data.description) lines.push(fmt.subtitle(data.description));
+    lines.push('');
+    if (Object.keys(p.metadata || {}).length) {
+      for (const [k, v] of Object.entries(p.metadata)) lines.push(fmt.metaLine(k, formatMetaValue(v)));
+      lines.push('');
+    }
+    if (p.ingredients.length) {
+      lines.push(fmt.sectionHeading('Ingredients'));
+      for (const ing of p.ingredients) {
+        const qty = [ing.quantity, ing.unit].filter(Boolean).join(' ');
+        lines.push(fmt.listItem(`${qty ? qty + ' ' : ''}${ing.name}${ing.preparation ? ` (${ing.preparation})` : ''}`));
+      }
+      lines.push('');
+    }
+    lines.push(fmt.sectionHeading('Method'));
+    p.steps.forEach((step, idx) => lines.push(fmt.numberedItem(idx + 1, step.text)));
+    return lines.join('\n');
+  }
+
+  const SHOPPING_TEXT_FORMAT = {
+    heading: () => 'SHOPPING LIST',
+    subtitle: (recipes) => `For: ${recipes}`,
+    listItem: (qty, name) => `  ${qty ? qty.padEnd(12) : ''.padEnd(12)} ${name}`,
+  };
+
+  const SHOPPING_MARKDOWN_FORMAT = {
+    heading: () => '# Shopping List',
+    subtitle: (recipes) => `*${recipes}*`,
+    listItem: (qty, name) => `- ${qty ? `**${qty}** ` : ''}${name}`,
+  };
+
+  function formatShoppingArtifact(data, fmt) {
+    if (!data) return '';
+    const lines = [fmt.heading()];
+    if (data.recipes) lines.push(fmt.subtitle(data.recipes.join(', ')));
+    lines.push('');
+    for (const ing of data.ingredients) {
+      const qty = [ing.quantity, ing.unit].filter(Boolean).join(' ');
+      lines.push(fmt.listItem(qty, ing.name));
+    }
+    return lines.join('\n');
+  }
+
   function getTranslationLanguages() {
     const raw = Array.isArray(APP_CONFIG.translationLanguages) ? APP_CONFIG.translationLanguages : ['en'];
     const unique = [];
@@ -432,77 +497,15 @@
       }
       this.lastShoppingData = body;
     },
-    recipeToText(data) {
-      const p = data.parsed;
-      const lines = [];
-      lines.push((data.title || '').toUpperCase());
-      if (data.description) lines.push(data.description);
-      lines.push('');
-      if (Object.keys(p.metadata || {}).length) {
-        for (const [k, v] of Object.entries(p.metadata)) lines.push(`${k}: ${formatMetaValue(v)}`);
-        lines.push('');
-      }
-      if (p.ingredients.length) {
-        lines.push('INGREDIENTS');
-        for (const ing of p.ingredients) {
-          const qty = [ing.quantity, ing.unit].filter(Boolean).join(' ');
-          lines.push(`  ${qty ? qty + ' ' : ''}${ing.name}${ing.preparation ? ` (${ing.preparation})` : ''}`);
-        }
-        lines.push('');
-      }
-      lines.push('METHOD');
-      p.steps.forEach((step, idx) => lines.push(`  ${idx + 1}. ${step.text}`));
-      return lines.join('\n');
-    },
+    recipeToText(data) { return formatRecipeArtifact(data, RECIPE_TEXT_FORMAT); },
 
-    recipeToMarkdown(data) {
-      const p = data.parsed;
-      const lines = [];
-      lines.push(`# ${data.title}`);
-      if (data.description) lines.push(`*${data.description}*`);
-      lines.push('');
-      if (Object.keys(p.metadata || {}).length) {
-        for (const [k, v] of Object.entries(p.metadata)) lines.push(`**${k}:** ${formatMetaValue(v)}  `);
-        lines.push('');
-      }
-      if (p.ingredients.length) {
-        lines.push('## Ingredients');
-        for (const ing of p.ingredients) {
-          const qty = [ing.quantity, ing.unit].filter(Boolean).join(' ');
-          lines.push(`- ${qty ? qty + ' ' : ''}${ing.name}${ing.preparation ? ` (${ing.preparation})` : ''}`);
-        }
-        lines.push('');
-      }
-      lines.push('## Method');
-      p.steps.forEach((step, idx) => lines.push(`${idx + 1}. ${step.text}`));
-      return lines.join('\n');
-    },
+    recipeToMarkdown(data) { return formatRecipeArtifact(data, RECIPE_MARKDOWN_FORMAT); },
 
     recipeToCooklang(data) { return data.source || ''; },
 
-    shoppingToText() {
-      if (!this.lastShoppingData) return '';
-      const lines = ['SHOPPING LIST'];
-      if (this.lastShoppingData.recipes) lines.push(`For: ${this.lastShoppingData.recipes.join(', ')}`);
-      lines.push('');
-      for (const ing of this.lastShoppingData.ingredients) {
-        const qty = [ing.quantity, ing.unit].filter(Boolean).join(' ');
-        lines.push(`  ${qty ? qty.padEnd(12) : ''.padEnd(12)} ${ing.name}`);
-      }
-      return lines.join('\n');
-    },
+    shoppingToText() { return formatShoppingArtifact(this.lastShoppingData, SHOPPING_TEXT_FORMAT); },
 
-    shoppingToMarkdown() {
-      if (!this.lastShoppingData) return '';
-      const lines = ['# Shopping List'];
-      if (this.lastShoppingData.recipes) lines.push(`*${this.lastShoppingData.recipes.join(', ')}*`);
-      lines.push('');
-      for (const ing of this.lastShoppingData.ingredients) {
-        const qty = [ing.quantity, ing.unit].filter(Boolean).join(' ');
-        lines.push(`- ${qty ? `**${qty}** ` : ''}${ing.name}`);
-      }
-      return lines.join('\n');
-    },
+    shoppingToMarkdown() { return formatShoppingArtifact(this.lastShoppingData, SHOPPING_MARKDOWN_FORMAT); },
 
     async copyToClipboard(text, label) {
       try {
